@@ -10,11 +10,19 @@ SubTex:
   Preamble < Info*
   Info     < :"\\info{" identifier :"," Text :"}" 
 
-  Node     < Chapter / Command / Text
-  Chapter < :"\\chapter{" Text :"}"
+  Node     < Chapter
+           / Command
+           / :Comment
+           / Text
+
+  Chapter  < :"\\chapter{" Text :"}"
   Command  < :"\\" (identifier !"chapter") (:"{" Node* :"}")?
+  Comment  <- "%" (!Newline Char)*
   Text     <~ (!Special Char)+
-  Special  <~ "\\" / "}"
+  Special  <~ "\\"
+            / "}"
+            / "%"
+  Newline  <~ "\n"
   Char     <~ .
 `);
 mixin(st);

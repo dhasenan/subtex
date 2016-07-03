@@ -82,7 +82,9 @@ class Parser {
             doc.author = val;
             break;
           case "stylesheet":
-            doc.stylesheets ~= val;
+            ExtFile f;
+            f.path = val;
+            doc.stylesheets ~= f;
             break;
           default:
             throw new Exception("unknown info field %s".format(info.matches[0]));

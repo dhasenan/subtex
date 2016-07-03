@@ -1,7 +1,5 @@
 module subtex.books;
 
-public import models;
-
 import std.conv;
 import std.file;
 import std.format;
@@ -39,7 +37,7 @@ string contentOpf(Book book) {
     <dc:identifier id="uuid_id" opf:scheme="uuid">` ~ book.id ~ `</dc:identifier>
   </metadata>
   <manifest>`;
-  foreach (file; book.files) {
+  foreach (file; book.stylesheets) {
     s ~= `<item href="` ~ file.name ~ `" id="` ~ file.id ~ `" media-type="` ~ file.type ~ `"/>`;
   }
   foreach (chapter; book.chapters) {
@@ -63,21 +61,27 @@ string contentOpf(Book book) {
   return s;
 }
 
-string titlepageXhtml(Book book) {
+string htmlPrelude(Book book, string bdy) {
   return `<?xml version='1.0' encoding='utf-8'?>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-        <title>%1$s</title>
+        <link rel="stylesheet" href="subtex.css">
+        <title>` ~ book.title ~ `</title>
     </head>
     <body>
+    ` ~ bdy ~ `
+    </body>
+</html>`;
+}
+
+string titlepageXhtml(Book book) {
+  return book.htmlPrelude(`
         <div style="text-align: center">
           <!-- TODO cover image -->
           <h1 class="title">%1$s</h1>
           <h3 class="author">%2$s</h3>
-        </div>
-    </body>
-</html>`.format(book.title, book.author);
+        </div>`.format(book.title, book.author));
 }
 
 string tocNcx(Book book) {
@@ -124,7 +128,7 @@ void save(Book book, string path) {
   writeVayne!titlepageXhtml(path, "titlepage.xhtml", book);
   writeVayne!tocNcx(path, "toc.ncx", book);
   foreach (chapter; book.chapters) {
-    save(path, chapter.filename, chapter.html);
+    save(path, chapter.filename, book.htmlPrelude(chapter.html));
   }
   /*
   foreach (file; book.files) {
@@ -151,7 +155,7 @@ class Chapter {
 class Book {
   string id;
   string title, author;
-  string[] stylesheets;
+  ExtFile[] stylesheets;
   Chapter[] chapters;
-  ExtFile[] files;
+  // TODO images?
 }

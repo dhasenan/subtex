@@ -163,7 +163,11 @@ class Parser {
         }
         break;
       case "SubTex.Text":
-        chapter.html ~= (elem.matches[0].replace("\n\n", "\n\n<p>"));
+        auto replacement = "\n\n<p>";
+        for (int i = quoteNest; i > 0; i--) {
+          replacement ~= getStartQuote(i);
+        }
+        chapter.html ~= (elem.matches[0].replace("\n\n", replacement));
         break;
       default:
         throw new Exception("unhandled element type " ~ elem.name);
@@ -176,8 +180,9 @@ class Parser {
     }
   }
 
-  private string getStartQuote() {
-    if (quoteNest % 2 == 0) {
+  private string getStartQuote(int i = -1) {
+    if (i == -1) i = quoteNest;
+    if (i % 2 == 0) {
       return "&ldquo;";
     } else {
       return "&lsquo;";

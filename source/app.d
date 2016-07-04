@@ -7,6 +7,7 @@ import std.format;
 import std.path;
 import std.string;
 import std.stdio;
+import std.zip;
 
 import pegged.grammar;
 
@@ -55,12 +56,13 @@ class Parser {
 
   Book parse() {
     doc = new Book();
-    chapterNum = 0;
+    chapterNum = 1;
     quoteNest = 0;
     chapter = new Chapter();
     chapter.fileid = "chapter_%s".format(doc.chapters.length);
     chapter.filename = "chapter_%s.html".format(doc.chapters.length);
     chapter.title = "Foreward";
+    chapter.index = 1;
     doc.chapters ~= chapter;
 
     auto tree = SubTex(data);
@@ -103,15 +105,20 @@ class Parser {
         visitChildren(elem);
         break;
       case "SubTex.Chapter":
-        chapter = new Chapter();
+        bool isNumbered = !elem.matches[0].startsWith("\\chapter*");
+        if (chapter.html.strip().length != 0) {
+          chapter = new Chapter();
+          doc.chapters ~= chapter;
+          if (isNumbered) {
+            chapterNum++;
+          }
+        }
         chapter.fileid = "chapter_%s".format(doc.chapters.length);
         chapter.filename = "chapter_%s.html".format(doc.chapters.length);
-        if (!elem.matches[0].startsWith("\\chapter*")) {
-          chapterNum++;
+        if (isNumbered) {
           chapter.index = chapterNum;
         }
         chapter.title = elem.children[0].matches[0];
-        doc.chapters ~= chapter;
         break;
       case "SubTex.Command":
         string tag = elem.matches[0];
@@ -122,6 +129,17 @@ class Parser {
             visitChildren(elem);
             quoteNest--;
             chapter.html ~= (getEndQuote());
+            break;
+          case "emph":
+          case "think":
+          case "spell":
+            chapter.html ~= (`<em class="%s">`.format(tag));
+            visitChildren(elem);
+            chapter.html ~= (`</em>`);
+            break;
+          case "scenebreak":
+          case "timeskip":
+            chapter.html ~= "\n<hr/>\n";
             break;
           default:
             chapter.html ~= (`<span class="%s">`.format(tag));
@@ -289,11 +307,12 @@ void main(string[] args)
   //writeln(g.successful);
   auto infile = args[1];
 //  auto g = SubTex(infile.readText());
-  auto outfile = File(infile.stripExtension() ~ ".html", "w");
-  auto outstream = outfile.lockingTextWriter();
+  auto outfile = File(infile.stripExtension() ~ ".epub", "w");
 
   auto doc = new Parser(infile.readText()).parse();
-  doc.save("tmp");
+  auto zf = new ZipArchive();
+  doc.save(zf);
+  outfile.rawWrite(zf.build());
 
 //  auto html = new Html!(typeof(outstream))(outstream);
 //  html.toHtml(g);

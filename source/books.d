@@ -1,11 +1,13 @@
 module subtex.books;
 
 import std.conv;
+import std.encoding;
 import std.file;
 import std.format;
 import std.path;
-import std.string;
 import std.stdio;
+import std.string;
+import std.zip;
 
 import pegged.grammar;
 
@@ -13,16 +15,16 @@ import pegged.grammar;
 enum container_xml = import("container.xml");
 enum subtex_css = import("subtex.css");
 
-void save(string path, string name, string content) {
-  writefln("saving %s/%s", path, name);
-  auto f = File(std.path.chainPath(path, name), "w");
-  auto writer = f.lockingTextWriter();
-  writer.put(content);
-  f.close();
+void save(ZipArchive zf, string name, string content) {
+  writefln("saving %s", name);
+  auto member = new ArchiveMember();
+  member.name = name;
+  member.expandedData = cast(ubyte[])content;
+  zf.addMember(member);
 }
 
-void writeVayne(alias method)(string path, string name, Book book) {
-  save(path, name, method(book));
+void writeVayne(alias method)(ZipArchive zf, string name, Book book) {
+  save(zf, name, method(book));
 }
 
 string contentOpf(Book book) {
@@ -45,6 +47,7 @@ string contentOpf(Book book) {
   }
   s ~= `
     <item href="toc.ncx" id="ncx" media-type="application/x-dtbncx+xml"/>
+    <item href="titlepage.xhtml" id="titlepage" media-type="application/xhtml+xml"/>
   </manifest>
   <spine toc="ncx">
     <itemref idref="titlepage"/>`;
@@ -98,9 +101,14 @@ string tocNcx(Book book) {
   <docTitle>
     <text>` ~ book.title ~ `</text>
   </docTitle>
-  <navMap>`;
+  <navMap><navPoint id="titlepage.xhtml" playOrder="1">
+      <navLabel>
+        <text>Title</text>
+      </navLabel>
+      <content src="titlepage.xhtml"/>
+    </navPoint>`;
   foreach (i, chapter; book.chapters) {
-    s ~= `<navPoint id="` ~ chapter.fileid ~ `" playOrder="` ~ i.to!string ~ `">
+    s ~= `<navPoint id="` ~ chapter.fileid ~ `" playOrder="` ~ (i + 2).to!string ~ `">
       <navLabel>
         <text> ` ~ chapter.title ~ `</text>
       </navLabel>
@@ -113,22 +121,23 @@ string tocNcx(Book book) {
   return s;
 }
 
-void save(Book book, string path) {
+void save(Book book, ZipArchive zf) {
   // We need to write several files:
   // * mimetype (hardcoded)
   // * META-INF/container.xml (hardcoded)
   // * content.opf
   // * toc.ncx (templated)
   // * titlepage.xhtml
-  mkdirRecurse(path ~ "/META-INF");
-  .save(path, "META-INF/container.xml", container_xml);
-  .save(path, "mimetype", "application/epub+zip");
-  .save(path, "subtex.css", subtex_css);
-  writeVayne!contentOpf(path, "content.opf", book);
-  writeVayne!titlepageXhtml(path, "titlepage.xhtml", book);
-  writeVayne!tocNcx(path, "toc.ncx", book);
+  //mkdirRecurse(zf ~ "/META-INF");
+  .save(zf, "META-INF/container.xml", container_xml);
+  .save(zf, "mimetype", "application/epub+zip");
+  .save(zf, "subtex.css", subtex_css);
+  writeVayne!contentOpf(zf, "content.opf", book);
+  writeVayne!titlepageXhtml(zf, "titlepage.xhtml", book);
+  writeVayne!tocNcx(zf, "toc.ncx", book);
   foreach (chapter; book.chapters) {
-    save(path, chapter.filename, book.htmlPrelude(chapter.html));
+    auto h2 = `<h2 class="chapter">%s</h2>`.format(chapter.header);
+    save(zf, chapter.filename, book.htmlPrelude(h2 ~ chapter.html));
   }
   /*
   foreach (file; book.files) {
@@ -150,6 +159,13 @@ class Chapter {
   int index = -1;
   string filename;
   string fileid;
+
+  string header() {
+    if (index > 0) {
+      return `Chapter %s: %s`.format(index, title);
+    }
+    return title;
+  }
 }
 
 class Book {

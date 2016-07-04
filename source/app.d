@@ -153,7 +153,7 @@ class Parser {
             break;
           case "scenebreak":
           case "timeskip":
-            chapter.html ~= "\n<hr/>\n";
+            chapter.html ~= "\n<hr class=\"%s\"/>\n".format(tag);
             break;
           default:
             chapter.html ~= (`<span class="%s">`.format(tag));

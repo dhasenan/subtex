@@ -65,17 +65,24 @@ string contentOpf(Book book) {
 }
 
 string htmlPrelude(Book book, string bdy) {
-  return `<?xml version='1.0' encoding='utf-8'?>
+  auto s =  `<?xml version='1.0' encoding='utf-8'?>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
         <link rel="stylesheet" href="subtex.css">
+        `;
+  foreach (stylesheet; book.stylesheets) {
+    s ~= `<link rel="stylesheet" href="` ~ stylesheet.path ~ `">
+        `;
+  }
+  s ~= `
         <title>` ~ book.title ~ `</title>
     </head>
     <body>
     ` ~ bdy ~ `
     </body>
 </html>`;
+  return s;
 }
 
 string titlepageXhtml(Book book) {
@@ -146,8 +153,11 @@ void save(Book book, ZipArchive zf) {
 }
 
 string toHtml(Book book) {
+  auto header = `<h1 class="title">%s</h1>
+    <h3 class="author">%s</h3>
+    `.format(book.title, book.author);
   auto guts = book.chapters.map!(x => x.fullHtml).join("\n");
-  return book.htmlPrelude(guts);
+  return book.htmlPrelude(header ~ guts);
 }
 
 struct ExtFile {

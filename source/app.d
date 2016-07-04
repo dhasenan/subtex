@@ -2,6 +2,7 @@ module subtex.app;
 
 import subtex.books;
 
+import std.algorithm;
 import std.file;
 import std.format;
 import std.path;
@@ -40,6 +41,7 @@ SubTex:
   Text     <~ (!Special Char)+
   Special  <~ "\\"
             / "}"
+            / "{"
             / "%"
   Newline  <~ "\n"
   Char     <~ .
@@ -53,6 +55,8 @@ class Parser {
   Chapter chapter;
   int chapterNum;
   int quoteNest;
+  ParseTree tree;
+  string error;
 
   Book parse() {
     doc = new Book();
@@ -65,8 +69,18 @@ class Parser {
     chapter.index = 1;
     doc.chapters ~= chapter;
 
-    auto tree = SubTex(data);
-    assert(tree.successful);
+    tree = SubTex(data);
+    if (!tree.successful) {
+      error = tree.failMsg;
+      return null;
+    }
+
+    if (tree.end < data.length - 1) {
+      auto line = data[0..tree.end].filter!(x => x == '\n').count + 1;
+      error = `Error parsing document around line %s`.format(line);
+      return null;
+    }
+
     // We have a SubTex node containing a Book node.
     tree = tree.children[0];
     auto kids = tree.children;
@@ -302,20 +316,60 @@ class Html(OutRange) {
 }
 
 
-void main(string[] args)
+int main(string[] args)
 {
-  //writeln(g.successful);
+  import std.getopt;
+  bool html = false;
+  bool epub = true;
+  bool print = false;
+  string outpath;
+  auto info = getopt(
+    args,
+    std.getopt.config.passThrough,
+    "html|h", "Whether to produce html output (default false).", &html,
+    "epub|e", "Whether to produce epub output (default true).", &epub,
+    "print|p", "Whether to print the parse tree.", &print,
+    "out|o", "Output filename. If producing both epub and html, the appropriate extensions will be used.", &outpath
+  );
+  if (args.length < 2) {
+    stderr.writeln("You must provide an input file");
+    return 1;
+  }
   auto infile = args[1];
-//  auto g = SubTex(infile.readText());
-  auto outfile = File(infile.stripExtension() ~ ".epub", "w");
+  if (outpath == "") {
+    outpath = infile;
+  }
 
-  auto doc = new Parser(infile.readText()).parse();
-  auto zf = new ZipArchive();
-  doc.save(zf);
-  outfile.rawWrite(zf.build());
+  auto parser = new Parser(infile.readText());
+  auto book = parser.parse();
+  if (print) {
+    writeln(parser.tree);
+  }
+  if (book is null) {
+    stderr.writefln("Failed to parse %s:\n%s", infile, parser.error);
+    return 1;
+  }
 
-//  auto html = new Html!(typeof(outstream))(outstream);
-//  html.toHtml(g);
-  //writeln(g.matches);
-	//writeln(g);
+  if (!html && !epub) {
+    stderr.writeln("No output requested.");
+    return 0;
+  }
+
+  if (epub) {
+    auto epubOut = outpath.stripExtension() ~ ".epub";
+    auto zf = new ZipArchive();
+    book.save(zf);
+    auto outfile = File(epubOut, "w");
+    outfile.rawWrite(zf.build());
+    outfile.close();
+  }
+  if (html) {
+    auto htmlOut = outpath.stripExtension() ~ ".html";
+    auto outfile = File(htmlOut, "w");
+    auto writer = outfile.lockingTextWriter();
+    writer.put(book.toHtml);
+    outfile.flush();
+    outfile.close();
+  }
+  return 0;
 }

@@ -1,5 +1,6 @@
 module subtex.books;
 
+import std.algorithm;
 import std.conv;
 import std.encoding;
 import std.file;
@@ -16,7 +17,6 @@ enum container_xml = import("container.xml");
 enum subtex_css = import("subtex.css");
 
 void save(ZipArchive zf, string name, string content) {
-  writefln("saving %s", name);
   auto member = new ArchiveMember();
   member.name = name;
   member.expandedData = cast(ubyte[])content;
@@ -136,14 +136,18 @@ void save(Book book, ZipArchive zf) {
   writeVayne!titlepageXhtml(zf, "titlepage.xhtml", book);
   writeVayne!tocNcx(zf, "toc.ncx", book);
   foreach (chapter; book.chapters) {
-    auto h2 = `<h2 class="chapter">%s</h2>`.format(chapter.header);
-    save(zf, chapter.filename, book.htmlPrelude(h2 ~ chapter.html));
+    save(zf, chapter.filename, book.htmlPrelude(chapter.fullHtml));
   }
   /*
   foreach (file; book.files) {
     file.save(path);
   }
   */
+}
+
+string toHtml(Book book) {
+  auto guts = book.chapters.map!(x => x.fullHtml).join("\n");
+  return book.htmlPrelude(guts);
 }
 
 struct ExtFile {
@@ -165,6 +169,12 @@ class Chapter {
       return `Chapter %s: %s`.format(index, title);
     }
     return title;
+  }
+
+  string fullHtml() {
+    auto h2 = `<h2 class="chapter">%s</h2>
+    `.format(header);
+    return h2 ~ html;
   }
 }
 

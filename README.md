@@ -6,6 +6,26 @@ semantic commands that you can use to produce a reasonable ebook.
 
 Currently, it can produce all-in-one-document HTML or an epub file.
 
+Why SubTex?
+-----------
+If you could be using LaTeX, why would you use SubTex?
+
+* Simplicity
+* Speed
+* Easy publication
+
+LaTeX is not quite as complex as the entire HTML5 specification (which includes CSS, MathJax, and
+SVG, among others). SubTex is only slightly more complicated than MarkDown.
+
+SubTex is faster than htlatex alone and roughly three times as fast as htlatex -> ebook-convert.
+Some people recommend using latexml and latexmlpost to convert LaTeX to HTML; currently, SubTex is
+about fifteen times as fast. While the speed advantage is not quite enough to change your entire
+workflow, SubTex is still improving.
+
+SubTex offers easy publication to epub. It's builtin -- the default option. In contrast, with LaTeX,
+it's very difficult. Your choice is `latexml`, which has issues with including certain packages and is
+slower than molasses, or `htlatex`, which doesn't play nice with Calibre's `ebook-convert` command.
+
 Language
 --------
 A SubTex document starts with a *preamble*, which is a set of `\info` options. The allowed `\info` options are:

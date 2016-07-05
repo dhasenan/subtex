@@ -1,6 +1,9 @@
 module subtex.app;
 
 import subtex.books;
+import subtex.output;
+
+import core.memory;
 
 import std.algorithm;
 import std.file;
@@ -19,7 +22,7 @@ enum st = grammar(`
 SubTex:
   Book      <- Preamble? Node*
   Preamble < Info*
-  Info     < :"\\info{" identifier :"," Text :"}" 
+  Info     < :"\\info{" identifier :"," Text :"}"
             / :Comment
 
   Node     <- Chapter
@@ -346,7 +349,12 @@ int main(string[] args)
   }
 
   auto parser = new Parser(infile.readText());
+  // The vast majority of the time in subtex is spent in pegged's parser.
+  // (Everything else we do is effectively noise -- it costs maybe 10ms.)
+  // Disabling the GC saves us half that time, even if we restore it right after..
+  GC.disable();
   auto book = parser.parse();
+  GC.enable();
   if (print) {
     writeln(parser.tree);
   }

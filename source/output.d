@@ -73,6 +73,11 @@ void nodeToHtml(OutRange)(Node node, ref OutRange sink) {
           foreach (kid; node.kids) asHtml(kid);
           sink.put(`</em>`);
           break;
+        case "timeskip":
+        case "scenebreak":
+          sink.put(`<hr class="`);
+          sink.put(cmd.text);
+          sink.put(`" />`);
         default:
           sink.put(`<span class="`);
           sink.put(cmd.text);
@@ -152,18 +157,16 @@ private:
       <dc:identifier id="uuid_id" opf:scheme="uuid">` ~ book.id ~ `</dc:identifier>
     </metadata>
     <manifest>`;
-    // TODO: stylesheets!
-    /*
-    foreach (file; book.stylesheets) {
+    foreach (file; book.info["stylesheet"]) {
+      auto parts = file.split('/').array;
+      auto name = parts[$-1];
+      auto id = name.replace('.', '_');
       s ~= `<item href="`;
-      s ~= file.name;
+      s ~= name;
       s ~= `" id="`;
-      s ~= file.id;
-      s ~= `" media-type="`;
-      s ~= file.type;
-      s ~= `"/>`;
+      s ~= id;
+      s ~= `" media-type="text/css"/>`;
     }
-    */
     foreach (chapter; book.chapters) {
       s ~= `<item href="`;
       s ~= chapter.filename;
@@ -172,6 +175,7 @@ private:
       s ~= `" media-type="application/xhtml+xml"/>`;
     }
     s ~= `
+      <item href="subtex.css" id="subtex_css" media-type="text/css"/>
       <item href="toc.ncx" id="ncx" media-type="application/x-dtbncx+xml"/>
       <item href="titlepage.xhtml" id="titlepage" media-type="application/xhtml+xml"/>
     </manifest>

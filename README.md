@@ -14,17 +14,19 @@ If you could be using LaTeX, why would you use SubTex?
 * Speed
 * Easy publication
 
-LaTeX is not quite as complex as the entire HTML5 specification (which includes CSS, MathJax, and
-SVG, among others). SubTex is only slightly more complicated than MarkDown.
+If LaTeX is HTML5, SubTex is MarkDown. The relative complexity is just that stark. SubTex only
+supports a handful of mostly-semantic commands, defined simply; LaTeX is a whole world of
+typesetting that you don't need to author a typical work of fiction.
 
-SubTex is faster than htlatex alone and roughly three times as fast as htlatex -> ebook-convert.
-Some people recommend using latexml and latexmlpost to convert LaTeX to HTML; currently, SubTex is
-about fifteen times as fast. While the speed advantage is not quite enough to change your entire
-workflow, SubTex is still improving.
+SubTex is blazingly fast. In a sample document weighing in at 410kb, `htlatex` alone took 1.6
+seconds to execute, with over three seconds to invoke both it and `ebook-convert`. In contrast,
+SubTex created both epub and html documents in 0.04 seconds. You could have your editor rebuild your
+project every time you save the file and not worry about how long it takes. (If you go through
+`latexml`, you might want to grab a cup of coffee; SubTex is five hundred times faster.)
 
 SubTex offers easy publication to epub. It's builtin -- the default option. In contrast, with LaTeX,
-it's very difficult. Your choice is `latexml`, which has issues with including certain packages and is
-slower than molasses, or `htlatex`, which doesn't play nice with Calibre's `ebook-convert` command.
+it's very difficult. Your choice is `latexml`, which has issues with including certain packages, or
+`htlatex`, which doesn't play nice with Calibre's `ebook-convert` command.
 
 Language
 --------

@@ -1,7 +1,7 @@
 module subtex.app;
 
-//import subtex.books;
-//import subtex.output;
+import subtex.books;
+import subtex.output;
 import subtex.parser;
 
 import core.memory;
@@ -57,14 +57,13 @@ int main(string[] args)
   }
 
   if (epub) {
-    /*
     auto epubOut = outpath.stripExtension() ~ ".epub";
     auto zf = new ZipArchive();
-    book.save(zf);
+    auto toEpub = new ToEpub();
+    toEpub.run(book, zf);
     auto outfile = File(epubOut, "w");
     outfile.rawWrite(zf.build());
     outfile.close();
-    */
   }
   if (html) {
     auto htmlOut = outpath.stripExtension() ~ ".html";

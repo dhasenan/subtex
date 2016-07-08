@@ -6,6 +6,9 @@ import std.algorithm;
 import std.array;
 import std.string;
 
+enum infoStart = "\\info{";
+enum chapterStart = "\\chapter{";
+enum silentChapterStart = "\\chapter*{";
 class Parser {
   string data, originalData;
   this(string data) {
@@ -70,9 +73,6 @@ class Parser {
     return book;
   }
 
-  enum infoStart = "\\info{";
-  enum chapterStart = "\\chapter{";
-  enum silentChapterStart = "\\chapter*{";
 
   void parseChapters(Book book) {
     while (data.length > 0) {
@@ -83,7 +83,7 @@ class Parser {
         silent = true;
         data = data[silentChapterStart.length..$];
       } else {
-        error("failed to parse");
+        error("expected chapter");
       }
       auto chapter = new Chapter(silent, getPosition);
       book.chapters ~= chapter;
@@ -99,7 +99,7 @@ class Parser {
 
   void parseNodeContents(Node parent) {
     while (data.length > 0) {
-      if (data.startsWith(chapterStart)) {
+      if (data.startsWith(chapterStart) || data.startsWith(silentChapterStart)) {
         return;
       }
       if (data[0] == '}') {
@@ -219,5 +219,13 @@ It was raining in the city.
   assert(kids.length == 3);
 
   assert(book.chapters[1].title == "Ending");
+}
+
+unittest {
+  auto text = `\chapter*{Prelude}
+It was raining in the city.
+    `;
+  assert(text.startsWith(silentChapterStart));
+  Book book = new Parser(text).parse();
 }
 

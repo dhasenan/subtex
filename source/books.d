@@ -76,5 +76,13 @@ class Chapter : Node {
   string filename() {
     return `chapter_` ~ index.to!string ~ `.html`;
   }
+
+  string fullTitle() {
+    import std.format;
+    if (silent) {
+      return title;
+    }
+    return `Chapter %s: %s`.format(chapterNum, title);
+  }
 }
 

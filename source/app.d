@@ -7,6 +7,7 @@ import subtex.parser;
 import core.memory;
 
 import std.algorithm;
+import std.array;
 import std.file;
 import std.format;
 import std.path;
@@ -18,61 +19,102 @@ import std.zip;
 int main(string[] args)
 {
   import std.getopt;
-  bool html = false;
-  bool epub = true;
+  string[] formats = [];
   bool print = false;
-  string outpath;
+  string userOutPath;
+  bool count = false;
   auto info = getopt(
     args,
     std.getopt.config.passThrough,
-    "html|h", "Whether to produce html output (default false).", &html,
-    "epub|e", "Whether to produce epub output (default true).", &epub,
+    "formats|f", "The output formats (epub, html, text, markdown)", &formats,
     "print|p", "Whether to print the parse tree.", &print,
-    "out|o", "Output filename. If producing both epub and html, the appropriate extensions will be used.", &outpath
+    "out|o", "Output filename. If producing both epub and html, the appropriate extensions will be used.", &userOutPath,
+    "count|c", "Count words in input documents", &count
   );
   if (args.length < 2) {
     stderr.writeln("You must provide an input file");
     return 1;
   }
+
+  if (formats.length == 0) {
+    formats = ["epub", "html"];
+  }
+
+  foreach (infile; args[1..$]) {
+    string outpath = userOutPath;
+    if (outpath == "") {
+      outpath = infile;
+    }
+    auto parser = new Parser(infile.readText());
+    Book book;
+    try {
+      book = parser.parse();
+    } catch (ParseException e) {
+      writefln("%s\nerror processing %s", e.msg, infile);
+    }
+    if (book is null) {
+      stderr.writefln("Failed to parse %s", infile);
+      return 1;
+    }
+
+    if (count) {
+      Appender!string writer;
+      writer.reserve(500_000);
+      auto toHtml = new ToText!(typeof(writer))(book, writer);
+      toHtml.run();
+      auto words = std.algorithm.count(splitter(writer.data));
+      writefln("%s: %s", infile, words);
+      continue;
+    }
+    if (formats.canFind("epub")) {
+      auto epubOut = outpath.stripExtension() ~ ".epub";
+      auto zf = new ZipArchive();
+      auto toEpub = new ToEpub();
+      toEpub.run(book, zf);
+      auto outfile = File(epubOut, "w");
+      outfile.rawWrite(zf.build());
+      outfile.close();
+    }
+    if (formats.canFind("html")) {
+      if (outpath == "-") {
+        auto writer = stdout.lockingTextWriter();
+        auto toHtml = new ToHtml!(typeof(writer))(book, writer);
+        toHtml.run();
+      } else {
+        auto htmlOut = outpath.stripExtension() ~ ".html";
+        auto outfile = File(htmlOut, "w");
+        auto writer = outfile.lockingTextWriter();
+        auto toHtml = new ToHtml!(typeof(writer))(book, writer);
+        toHtml.run();
+        outfile.flush();
+        outfile.close();
+      }
+    }
+    if (formats.canFind("markdown")) {
+      auto mdOut = outpath.stripExtension() ~ ".md";
+      auto outfile = File(mdOut, "w");
+      auto writer = outfile.lockingTextWriter();
+      auto toHtml = new ToMarkdown!(typeof(writer))(book, writer);
+      toHtml.run();
+      outfile.flush();
+      outfile.close();
+    }
+    if (formats.canFind("text")) {
+      if (outpath == "-") {
+        auto writer = stdout.lockingTextWriter();
+        auto toHtml = new ToText!(typeof(writer))(book, writer);
+        toHtml.run();
+      } else {
+        auto mdOut = outpath.stripExtension() ~ ".txt";
+        auto outfile = File(mdOut, "w");
+        auto writer = outfile.lockingTextWriter();
+        auto toHtml = new ToText!(typeof(writer))(book, writer);
+        toHtml.run();
+        outfile.flush();
+        outfile.close();
+      }
+    }
+  }
   auto infile = args[1];
-  if (outpath == "") {
-    outpath = infile;
-  }
-
-  auto parser = new Parser(infile.readText());
-  auto book = parser.parse();
-  /*
-  if (print) {
-    writeln(parser.tree);
-  }
-  */
-  if (book is null) {
-    stderr.writefln("Failed to parse %s", infile);
-    return 1;
-  }
-
-  if (!html && !epub) {
-    stderr.writeln("No output requested.");
-    return 0;
-  }
-
-  if (epub) {
-    auto epubOut = outpath.stripExtension() ~ ".epub";
-    auto zf = new ZipArchive();
-    auto toEpub = new ToEpub();
-    toEpub.run(book, zf);
-    auto outfile = File(epubOut, "w");
-    outfile.rawWrite(zf.build());
-    outfile.close();
-  }
-  if (html) {
-    auto htmlOut = outpath.stripExtension() ~ ".html";
-    auto outfile = File(htmlOut, "w");
-    auto writer = outfile.lockingTextWriter();
-    auto toHtml = new ToHtml!(typeof(writer))(book, writer);
-    toHtml.run();
-    outfile.flush();
-    outfile.close();
-  }
   return 0;
 }

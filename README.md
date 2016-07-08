@@ -20,9 +20,8 @@ typesetting that you don't need to author a typical work of fiction.
 
 SubTex is blazingly fast. In a sample document weighing in at 410kb, `htlatex` alone took 1.6
 seconds to execute, with over three seconds to invoke both it and `ebook-convert`. In contrast,
-SubTex created both epub and html documents in 0.04 seconds. You could have your editor rebuild your
-project every time you save the file and not worry about how long it takes. (If you go through
-`latexml`, you might want to grab a cup of coffee; SubTex is five hundred times faster.)
+SubTex created both epub and html documents in 0.04 seconds. It's done by the time you realize you
+finished pressing the 'enter' key. There's no competition.
 
 SubTex offers easy publication to epub. It's builtin -- the default option. In contrast, with LaTeX,
 it's very difficult. Your choice is `latexml`, which has issues with including certain packages, or
@@ -57,6 +56,45 @@ The body commands are:
 All commands, recognized or not, with the exception of `\e`, yield HTML elements with a `class` that
 matches the command name you used. So while both `\emph` and `\think` result in the same HTML tag,
 you can distinguish them with CSS.
+
+
+Building
+--------
+If you have [Dub](https://code.dlang.org/download) installed and working, just check out the
+repository and use `dub build`. Dub is installed by default with versions of
+[DMD](http://dlang.org/download.html) 2.072 and later.
+
+The result is an all-in-one binary; you can copy it, move it around, whatever, without worrying
+about whether it can find any dependent files.
+
+
+Invocation
+----------
+The simplest way to invoke subtex is to generate an epub file:
+
+```
+subtex twelve_caesars.sub
+```
+
+This produces a file named `twelve_caesars.epub` that you can open with Calibre or put on your Nook
+or read with FBReader or what have you.
+
+Running `subtex --help` should give you some indication of what the options are:
+
+```
+$ subtex --help
+subtex: producing ebooks from a simple TeX-like language
+-f --formats The output formats (epub, html, text, markdown)
+-o     --out Output file base name.
+-c   --count Count words in input documents
+-h    --help This help information.
+```
+
+The default is to output an epub document with the same path as the input, but with the extension
+changed. This is in the same directory as the input file.
+
+You can also use subtex to count the words in a document. This will suppress file generation and
+just print out the number of words.
 
 Example document
 ----------------

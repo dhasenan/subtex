@@ -20,17 +20,20 @@ int main(string[] args)
 {
   import std.getopt;
   string[] formats = [];
-  bool print = false;
   string userOutPath;
   bool count = false;
   auto info = getopt(
     args,
     std.getopt.config.passThrough,
     "formats|f", "The output formats (epub, html, text, markdown)", &formats,
-    "print|p", "Whether to print the parse tree.", &print,
-    "out|o", "Output filename. If producing both epub and html, the appropriate extensions will be used.", &userOutPath,
+    "out|o", "Output file base name.", &userOutPath,
     "count|c", "Count words in input documents", &count
   );
+  if (info.helpWanted) {
+    defaultGetoptPrinter("subtex: producing ebooks from a simple TeX-like language",
+        info.options);
+    return 0;
+  }
   if (args.length < 2) {
     stderr.writeln("You must provide an input file");
     return 1;

@@ -160,6 +160,20 @@ class Parser {
           } else {
             error("unterminated command", cmd.start);
           }
+          if (cmd.text == "img") {
+            if (cmd.kids.length == 0
+                || cmd.kids.any!(x => !!cast(Cmd)x)
+                || cmd.kids.any!(x => x.text.length == 0)) {
+              error(`\img command requires one argument; eg '\img{foo.png}' or `
+                  `'\img{https://example.org/}'. If you are on Windows and are specifying `
+                  `a path, use double backslashes: \img{C:\\Documents\\Pictures\\foo.png}.`);
+
+            }
+            if (cmd.kids.length > 1) {
+              // Escape sequence. Join.
+              cmd.uri = cmd.kids.map!(x => x.text).join("");
+            }
+          }
         }
         parent.kids ~= cmd;
       }

@@ -6,20 +6,23 @@ import std.array;
 import std.conv;
 import std.format;
 import std.math;
+import std.path;
+import std.stdio;
 import std.string;
+import std.uuid;
 
-void htmlPrelude(OutRange)(Book book, ref OutRange sink, void delegate(ref OutRange) bdy) {
+void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets, void delegate(ref OutRange) bdy) {
   sink.put(`<?xml version='1.0' encoding='utf-8'?>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-        <link rel="stylesheet" href="subtex.css">
+        <link rel="stylesheet" href="subtex.css" type="text/css"/>
         `);
-  if ("stylesheet" in book.info) {
+  if (includeStylesheets && "stylesheet" in book.info) {
     foreach (stylesheet; book.info["stylesheet"]) {
       sink.put(`<link rel="stylesheet" href="`);
       sink.put(stylesheet);
-      sink.put(`">
+      sink.put(`" type="text"/>
           `);
     }
   }
@@ -81,20 +84,26 @@ void nodeToHtml(OutRange)(Node node, ref OutRange sink) {
           sink.put(cmd.text);
           sink.put(`" />`);
           break;
+        case "img":
+          sink.put(`<img src="`);
+          sink.put(cmd.uri);
+          sink.put(`" />`);
+          break;
         default:
           sink.put(`<span class="`);
           sink.put(cmd.text);
           sink.put(`">`);
           foreach (kid; node.kids) asHtml(kid);
-          sink.put(`</em>`);
+          sink.put(`</span>`);
           break;
       }
     } else {
-      if (node.text && !cast(Chapter) node) {
+      if (node.text && !cast(Chapter) node && node.text.length) {
         auto parts = node.text.split("\n\n");
+        // This will be empty string if the node started with '\n\n'
         sink.put(sanitize(parts[0]));
         foreach (part; parts[1..$]) {
-          sink.put(`
+          sink.put(`</p>
 
 <p>`);
           for (int i = quoteNest - 1; i >= 0; i--) {
@@ -195,8 +204,16 @@ class ToMarkdown(OutRange) {
           break;
       }
     } else {
+      // If you have 40+ levels of quote nesting, you have issues.
+      auto lineStartQuote = `
+
+"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'`[0..quoteNest + 2];
       if (simple) {
-        sink.put(node.text);
+        if (quoteNest > 0) {
+          sink.put(node.text.replace("\n\n", lineStartQuote));
+        } else {
+          sink.put(node.text);
+        }
       } else {
         sink.put(
           node.text
@@ -211,6 +228,7 @@ class ToMarkdown(OutRange) {
             .replace(`#`, `\#`)
             .replace(`!`, `\!`)
             .replace("`", "\\`")
+            .replace("\n\n", lineStartQuote)
         );
       }
     }
@@ -263,7 +281,10 @@ class ToText(OutRange) {
       }
     }
     if (node.text.length && !cast(Cmd)node) {
-      sink.put(node.text);
+      auto lineStartQuote = `
+
+"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'`[0..quoteNest + 2];
+      sink.put(node.text.replace("\n\n", lineStartQuote));
     }
     foreach(kid; node.kids) {
       writeNode(kid);
@@ -273,24 +294,53 @@ class ToText(OutRange) {
 
 class ToEpub {
   import std.zip;
-  void run(Book book, ZipArchive zf) {
+  string basePath;
+  this(string basePath) {
+    this.basePath = basePath;
+  }
+  bool run(Book book, ZipArchive zf) {
+    bool success = true;
     save(zf, "META-INF/container.xml", container_xml);
     save(zf, "mimetype", "application/epub+zip");
     save(zf, "subtex.css", subtex_css);
     writeVayne!contentOpf(zf, "content.opf", book);
     writeVayne!titlepageXhtml(zf, "titlepage.xhtml", book);
     writeVayne!tocNcx(zf, "toc.ncx", book);
+    if ("autocover" in book.info) {
+      writeVayne!cover(zf, "subtex_cover.svg", book);
+    }
     foreach (chapter; book.chapters) {
       Appender!string sink;
       sink.reserve(cast(size_t)(chapter.length * 1.2));
-      book.htmlPrelude(sink, delegate void (ref Appender!string s) {
+      book.htmlPrelude(sink, false, delegate void (ref Appender!string s) {
         s ~= `<h2 class="chapter">`;
         s ~= chapter.fullTitle;
-        s ~= `</h2>`;
+        s ~= `</h2><p>`;
         nodeToHtml(chapter, s);
+        s ~= `</p>`;
       });
       save(zf, chapter.filename, sink.data);
     }
+    foreach (stylesheet; book.stylesheets) {
+      import path=std.path;
+      import std.stdio : writefln;
+      import std.file : readText;
+      string data;
+      string fullPath = path.absolutePath(stylesheet, basePath);
+      try {
+        data = readText(fullPath);
+      } catch (Exception e) {
+        writefln("Failed to read a stylesheet. " ~
+            "You specified its path as [%s], which I inferred to be [%s]. " ~
+            "Please make sure it exists, you can read it, and it's got valid UTF8 text. " ~
+            "I'm still making your ebook, but it might not look quite like you expect, " ~
+            "and some applications might not read it properly.",
+            stylesheet, fullPath);
+        success = false;
+      }
+      save(zf, path.baseName(stylesheet), data);
+    }
+    return success;
   }
 private:
   enum container_xml = import("container.xml");
@@ -307,7 +357,7 @@ private:
     save(zf, name, method(book));
   }
 
-  string contentOpf(Book book) {
+  static string contentOpf(Book book) {
     Appender!string s;
     s.reserve(2000);
     s ~= `<?xml version='1.0' encoding='utf-8'?>
@@ -330,11 +380,46 @@ private:
         auto name = parts[$-1];
         auto id = name.replace(".", "_");
         s ~= `
-      <item href="`;
+    <item href="`;
         s ~= name;
         s ~= `" id="`;
         s ~= id;
         s ~= `" media-type="text/css"/>`;
+      }
+    }
+    if ("autocover" in book.info) {
+      s ~= `
+    <item href="subtex_cover.svg" id="cover" media-type="text/svg+xml" />`;
+    }
+    if ("cover" in book.info) {
+      auto cover = book.info["cover"][0];
+      auto ext = cover.extension.toLower;
+      string mimeType;
+      switch (ext) {
+        case "png":
+          mimeType = `image/png`;
+          break;
+        case "jpg":
+        case "jpeg":
+          mimeType = `image/jpeg`;
+          break;
+        case "gif":
+          mimeType = `image/gif`;
+          break;
+        case "svg":
+          mimeType = `text/svg+xml`;
+          break;
+        default:
+          writefln("Unrecognized image type %s; skipping. We can handle gif, jpg, png, and svg.", ext);
+          break;
+      }
+      if (mimeType.length) {
+        s ~= `
+    <item href="`;
+        s ~= cover;
+        s ~= `" id="cover" media-type="`;
+        s ~= mimeType;
+        s ~= `" />`;
       }
     }
     foreach (chapter; book.chapters) {
@@ -353,7 +438,8 @@ private:
   <spine toc="ncx">
     <itemref idref="titlepage"/>`;
     foreach (chapter; book.chapters) {
-      s ~= `<itemref idref="`;
+      s ~= `
+    <itemref idref="`;
       s ~= chapter.fileid;
       s ~= `"/>`;
     }
@@ -367,13 +453,22 @@ private:
     return s.data;
   }
 
-  string titlepageXhtml(Book book) {
+  static string titlepageXhtml(Book book) {
     Appender!string s;
     s.reserve(2000);
-    book.htmlPrelude(s, delegate void (ref Appender!string s) {
+    book.htmlPrelude(s, false, delegate void (ref Appender!string s) {
       s ~= `
-        <div style="text-align: center">
-          <!-- TODO cover image -->
+        <div style="text-align: center">`;
+      if ("cover" in book.info) {
+        s ~= `
+          <img src="`;
+        s ~= book.info["cover"][0];
+        s ~= `" />`;
+      } else if ("autocover" in book.info) {
+        s ~= `
+          <img src="subtex_cover.svg" />`;
+      }
+      s ~= `
           <h1 class="title">`;
       s ~= book.title;
       s ~= `</h1>
@@ -385,7 +480,7 @@ private:
     return s.data;
   }
 
-  string tocNcx(Book book) {
+  static string tocNcx(Book book) {
     Appender!string s;
     s.reserve(1000);
     s ~= `<?xml version='1.0' encoding='utf-8'?>
@@ -404,21 +499,16 @@ private:
     s ~= book.title;
     s ~= `</text>
   </docTitle>
-  <navMap><navPoint id="titlepage.xhtml" playOrder="1">
-      <navLabel>
-        <text>Title</text>
-      </navLabel>
-      <content src="titlepage.xhtml"/>
-    </navPoint>`;
+  <navMap>`;
     foreach (i, chapter; book.chapters) {
       s ~= `
     <navPoint id="`;
-      s ~= chapter.fileid;
+      s ~= chapter.id;
       s ~= `" playOrder="`;
       s ~= (i + 2).to!string;
       s ~= `">
       <navLabel>
-        <text> `;
+        <text>`;
       s ~= chapter.title;
       s ~= `</text>
       </navLabel>
@@ -430,6 +520,24 @@ private:
     s ~= `
   </navMap>
 </ncx>`;
+    return s.data;
+  }
+
+  static string cover(Book book) {
+    Appender!string s;
+    s.reserve(1000);
+    s ~= `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="350" height="475">
+  <rect x="10" y="10" width="330" height="455" stroke="black" stroke-width="3" fill="#cceeff" stroke-linecap="round"/>
+  <text text-anchor="middle" x="175" y="75" font-size="30" font-weight="600" font-family="serif"
+  stroke-width="2" stroke-opacity="0.5" stroke="#000000" fill="#000000">`;
+    s ~= book.title;
+    s ~= `</text>
+  <text text-anchor="middle" x="175" y="135" font-size="15">`;
+    s ~= book.author;
+    s ~= `</text>
+</svg>
+`;
     return s.data;
   }
 }
@@ -454,7 +562,7 @@ private:
       <h3 class="author">%s</h3>
       `.format(book.title, book.author);
 
-    book.htmlPrelude(sink, delegate void (ref OutRange s) {
+    book.htmlPrelude(sink, true, delegate void (ref OutRange s) {
       sink.put(header);
       foreach (chapter; book.chapters) {
         sink.put(`<h2 class="chapter">`);

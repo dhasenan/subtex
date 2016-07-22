@@ -43,7 +43,9 @@ int main(string[] args)
     formats = ["epub", "html"];
   }
 
+  bool success = true;
   foreach (infile; args[1..$]) {
+    auto basePath = infile.dirName.absolutePath;
     string outpath = userOutPath;
     if (outpath == "") {
       outpath = infile;
@@ -72,8 +74,8 @@ int main(string[] args)
     if (formats.canFind("epub")) {
       auto epubOut = outpath.stripExtension() ~ ".epub";
       auto zf = new ZipArchive();
-      auto toEpub = new ToEpub();
-      toEpub.run(book, zf);
+      auto toEpub = new ToEpub(basePath);
+      success = success && toEpub.run(book, zf);
       auto outfile = File(epubOut, "w");
       outfile.rawWrite(zf.build());
       outfile.close();
@@ -118,6 +120,6 @@ int main(string[] args)
       }
     }
   }
-  auto infile = args[1];
-  return 0;
+  if (success) return 0;
+  return 1;
 }

@@ -33,8 +33,9 @@ A SubTex document starts with a *preamble*, which is a set of `\info` options. T
 
 * `\info{author, Author's Name}` -- set the document's author(s).
 * `\info{title, Book Title}` -- set the document's title.
-* `\info{stylesheet, stylesheet url}` -- add a stylesheet to the document. May occur multiple times.
-  Stylesheets are not currently supported in epub output.
+* `\info{stylesheet, stylesheet path}` -- add a stylesheet to the document. May occur multiple times.
+* `\info{autocover, true}` -- automatically generate a cover image.
+* `\info{cover, path}` -- use the specified image as a cover image. Can be a path or a URI.
 
 After the preamble comes the *body*, which consists of zero or more *chapters*. If you don't
 explicitly create a chapter, there is an implicit "Foreward" chapter.
@@ -52,6 +53,7 @@ The body commands are:
 * `\spell{text}` -- a character casting a spell. Also turns into HTML `em` tags.
 * `\scenebreak` -- a break between scenes. Turns into HTML `hr` tags.
 * `\timeskip` -- a break between scenes, specifically indicating a time break. Turns into HTML `hr` tags.
+* `\img{path}` -- include an image here. Can be a path or a URL.
 
 All commands, recognized or not, with the exception of `\e`, yield HTML elements with a `class` that
 matches the command name you used. So while both `\emph` and `\think` result in the same HTML tag,

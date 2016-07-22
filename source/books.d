@@ -24,6 +24,13 @@ class Book {
     }
     return "Book";
   }
+
+  string[] stylesheets() {
+    if (auto p = "stylesheet" in info) {
+      return *p;
+    }
+    return null;
+  }
 }
 
 // A standard node is either a plain string, or a command, or a series of nodes.
@@ -34,7 +41,8 @@ class Node {
     this.start = start;
   }
 
-  string text;
+  string text;  // for commands: the name of the command; else text contents
+  string uri;   // for URI-oriented commands (img)
   Node[] kids;
   size_t start;
 
@@ -83,6 +91,10 @@ class Chapter : Node {
       return title;
     }
     return `Chapter %s: %s`.format(chapterNum, title);
+  }
+
+  string id() {
+    return title.sha1UUID().to!string;
   }
 }
 

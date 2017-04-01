@@ -22,12 +22,14 @@ int main(string[] args)
   string[] formats = [];
   string userOutPath;
   bool count = false;
+  bool chapterCount = false;
   auto info = getopt(
     args,
     std.getopt.config.passThrough,
-    "formats|f", "The output formats (epub, html, text, markdown)", &formats,
+    "formats|f", "The output formats (epub, html, text, markdown, bbcode, chapters)", &formats,
     "out|o", "Output file base name.", &userOutPath,
-    "count|c", "Count words in input documents", &count
+    "count|c", "Count words in input documents", &count,
+    "chaptercount|d", "Count words in input documents", &chapterCount,
   );
   if (info.helpWanted) {
     defaultGetoptPrinter("subtex: producing ebooks from a simple TeX-like language",
@@ -69,7 +71,18 @@ int main(string[] args)
       toHtml.run();
       auto words = std.algorithm.count(splitter(writer.data));
       writefln("%s: %s", infile, words);
-      continue;
+    }
+    if (chapterCount) {
+      foreach (c; book.chapters) {
+        Appender!string writer;
+        writer.reserve(50_000);
+        auto b2 = new Book;
+        b2.chapters = [c];
+        auto toText = new ToText!(typeof(writer))(b2, writer);
+        toText.run();
+        auto words = std.algorithm.count(splitter(writer.data));
+        writefln("%s %s: %s", infile, c.title, words);
+      }
     }
     if (formats.canFind("epub")) {
       auto epubOut = outpath.stripExtension() ~ ".epub";
@@ -104,6 +117,15 @@ int main(string[] args)
       outfile.flush();
       outfile.close();
     }
+    if (formats.canFind("bbcode")) {
+      auto mdOut = outpath.stripExtension() ~ ".bbcode";
+      auto outfile = File(mdOut, "w");
+      auto writer = outfile.lockingTextWriter();
+      auto toHtml = new ToBbcode!(typeof(writer))(book, writer);
+      toHtml.run();
+      outfile.flush();
+      outfile.close();
+    }
     if (formats.canFind("text")) {
       if (outpath == "-") {
         auto writer = stdout.lockingTextWriter();
@@ -119,6 +141,10 @@ int main(string[] args)
         outfile.close();
       }
     }
+		if (formats.canFind("chapters")) {
+			auto outdir = outpath.stripExtension;
+			new ToChapters(book, outdir).toChapters();
+		}
   }
   if (success) return 0;
   return 1;

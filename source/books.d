@@ -78,11 +78,11 @@ class Chapter : Node {
   int chapterNum;
 
   string fileid() {
-    return `chapter_` ~ index.to!string;
+    return `chapter` ~ index.to!string;
   }
 
   string filename() {
-    return `chapter_` ~ index.to!string ~ `.html`;
+    return `chapter` ~ index.to!string ~ `.html`;
   }
 
   string fullTitle() {

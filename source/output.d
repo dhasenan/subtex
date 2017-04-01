@@ -45,17 +45,17 @@ void nodeToHtml(OutRange)(Node node, ref OutRange sink) {
   string startQuote(int i = -1) {
     if (i == -1) i = quoteNest;
     if (i % 2 == 0) {
-      return "&ldquo;";
+      return "&#x201C;";
     } else {
-      return "&lsquo;";
+      return "&#x2018;";
     }
   }
 
   string endQuote() {
     if (quoteNest % 2 == 0) {
-      return "&rdquo;";
+      return "&#x201D;";
     } else {
-      return "&rsquo;";
+      return "&#x2019;";
     }
   }
 
@@ -69,6 +69,7 @@ void nodeToHtml(OutRange)(Node node, ref OutRange sink) {
           quoteNest--;
           sink.put(endQuote);
           break;
+        case "i":
         case "emph":
         case "think":
         case "spell":
@@ -78,11 +79,19 @@ void nodeToHtml(OutRange)(Node node, ref OutRange sink) {
           foreach (kid; node.kids) asHtml(kid);
           sink.put(`</em>`);
           break;
+        case "b":
+          sink.put(`<b class="`);
+          sink.put(cmd.text);
+          sink.put(`">`);
+          foreach (kid; node.kids) asHtml(kid);
+          sink.put(`</b>`);
+          break;
         case "timeskip":
         case "scenebreak":
-          sink.put(`<hr class="`);
+          // This has to come between paragraphs
+          sink.put(`</p><hr class="`);
           sink.put(cmd.text);
-          sink.put(`" />`);
+          sink.put(`" /><p>`);
           break;
         case "img":
           sink.put(`<img src="`);
@@ -111,10 +120,10 @@ void nodeToHtml(OutRange)(Node node, ref OutRange sink) {
           }
           sink.put(part
               .replace("&", "&amp;")
-              .replace(" -- ", "&mdash;")
-              .replace(" --", "&ndash;")
-              .replace("-- ", "&ndash;")
-              .replace("--", "&ndash;")
+              .replace(" -- ", "&#x2014;")
+              .replace(" --", "&#x2013;")
+              .replace("-- ", "&#x2013;")
+              .replace("--", "&#x2013;")
               );
         }
       }
@@ -131,8 +140,8 @@ string sanitize(string fragment) {
   // TODO more replacements needed?
   return fragment
     .replace("&", "&amp;")
-    .replace(" -- ", "&mdash;")
-    .replace("--", "&mdash;")
+    .replace(" -- ", "&#x2014;")
+    .replace("--", "&#x2013;")
     ;
 }
 
@@ -190,12 +199,22 @@ class ToMarkdown(OutRange) {
           quoteNest--;
           sink.put(quote);
           return;
+        case "spell":
+        case "think":
         case "emph":
+        case "i":
           sink.put(`_`);
           foreach(kid; node.kids) {
             writeNode(kid);
           }
           sink.put(`_`);
+          return;
+        case "b":
+          sink.put(`**`);
+          foreach(kid; node.kids) {
+            writeNode(kid);
+          }
+          sink.put(`**`);
           return;
         default:
           foreach(kid; node.kids) {
@@ -300,8 +319,10 @@ class ToEpub {
   }
   bool run(Book book, ZipArchive zf) {
     bool success = true;
-    save(zf, "META-INF/container.xml", container_xml);
+    // mimetype should be the first entry in the zip.
+    // Unfortunately, this doesn't seem to happen...
     save(zf, "mimetype", "application/epub+zip");
+    save(zf, "META-INF/container.xml", container_xml);
     save(zf, "subtex.css", subtex_css);
     writeVayne!contentOpf(zf, "content.opf", book);
     writeVayne!titlepageXhtml(zf, "titlepage.xhtml", book);
@@ -378,7 +399,7 @@ private:
       foreach (file; book.info["stylesheet"]) {
         auto parts = file.split('/').array;
         auto name = parts[$-1];
-        auto id = name.replace(".", "_");
+        auto id = name.replace(".", "");
         s ~= `
     <item href="`;
         s ~= name;
@@ -431,7 +452,7 @@ private:
       s ~= `" media-type="application/xhtml+xml"/>`;
     }
     s ~= `
-    <item href="subtex.css" id="subtex_css" media-type="text/css"/>
+    <item href="subtex.css" id="subtexcss" media-type="text/css"/>
     <item href="toc.ncx" id="ncx" media-type="application/x-dtbncx+xml"/>
     <item href="titlepage.xhtml" id="titlepage" media-type="application/xhtml+xml"/>
   </manifest>
@@ -502,10 +523,10 @@ private:
   <navMap>`;
     foreach (i, chapter; book.chapters) {
       s ~= `
-    <navPoint id="`;
-      s ~= chapter.id;
+    <navPoint id="ch`;
+      s ~= chapter.id.replace("-", "");
       s ~= `" playOrder="`;
-      s ~= (i + 2).to!string;
+      s ~= (i + 1).to!string;
       s ~= `">
       <navLabel>
         <text>`;
@@ -542,6 +563,34 @@ private:
   }
 }
 
+class ToChapters {
+  Book book;
+  string outDirectory;
+
+  this(Book book, string outDirectory) {
+    this.book = book;
+    this.outDirectory = outDirectory;
+  }
+
+  void toChapters() {
+    import std.file : mkdirRecurse;
+    import std.path : chainPath;
+    mkdirRecurse(outDirectory);
+
+    foreach (i, chapter; book.chapters) {
+      auto name = `chapter%s.html`.format(i + 1);
+      auto fullPath = chainPath(outDirectory, name);
+      auto outfile = File(fullPath, "w");
+      auto writer = outfile.lockingTextWriter();
+      book.htmlPrelude(writer, true, delegate void(ref typeof(writer) s) {
+          nodeToHtml!(typeof(s))(chapter, s);
+      });
+      outfile.flush();
+      outfile.close();
+    }
+  }
+}
+
 class ToHtml(OutRange) {
   this(Book book, OutRange sink) {
     this.book = book;
@@ -571,6 +620,106 @@ private:
         nodeToHtml!OutRange(chapter, sink);
       }
     });
+  }
+}
+
+class ToBbcode(OutRange) {
+  // TODO quotes!
+  bool simple = true;
+  OutRange sink;
+  Book book;
+  int quoteNest = 0;
+  this(Book book, OutRange sink) {
+    this.book = book;
+    this.sink = sink;
+  }
+
+  void run() {
+    sink.put(`[style size="200%"][b]`);
+    sink.put(book.title);
+    sink.put(`[/b][/style]`);
+    sink.put("\n");
+    sink.put(book.author);
+    sink.put("\n");
+    sink.put("\n");
+    foreach (chapter; book.chapters) {
+      sink.put(`[style size="150%"][b]`);
+      if (!chapter.silent) {
+        sink.put("Chapter ");
+        sink.put(chapter.chapterNum.to!string);
+        sink.put(": ");
+      }
+      sink.put(chapter.title);
+      sink.put(`[/b][/style]`);
+      sink.put("\n");
+      writeNode(chapter);
+      sink.put("\n");
+      sink.put("\n");
+    }
+  }
+
+  void writeNode(Node node) {
+    if (auto cmd = cast(Cmd)node) {
+      switch (cmd.text) {
+        case "e":
+          auto quote = quoteNest % 2 == 0 ? `"` : `'`;
+          sink.put(quote);
+          quoteNest++;
+          foreach(kid; node.kids) {
+            writeNode(kid);
+          }
+          quoteNest--;
+          sink.put(quote);
+          return;
+        case "spell":
+        case "think":
+        case "emph":
+        case "i":
+          sink.put(`[i]`);
+          foreach(kid; node.kids) {
+            writeNode(kid);
+          }
+          sink.put(`[/i]`);
+          return;
+        case "b":
+          sink.put(`[b]`);
+          foreach(kid; node.kids) {
+            writeNode(kid);
+          }
+          sink.put(`[/b]`);
+          return;
+        case "code":
+          sink.put(`[inline]`);
+          foreach(kid; node.kids) {
+            writeNode(kid);
+          }
+          sink.put(`[/inline]`);
+          return;
+        default:
+          foreach(kid; node.kids) {
+            writeNode(kid);
+          }
+          return;
+      }
+    } else {
+      // If you have 40+ levels of quote nesting, you have issues.
+      auto lineStartQuote = `
+
+"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'`[0..quoteNest + 2];
+      node.text = node.text
+        .replace("\n", "☃")
+        .replace("☃☃", "\n\n")
+        .replace("☃", " ")
+        .replace("--", "—");
+      if (quoteNest > 0) {
+        sink.put(node.text.replace("\n\n", lineStartQuote));
+      } else {
+        sink.put(node.text);
+      }
+      foreach(kid; node.kids) {
+        writeNode(kid);
+      }
+    }
   }
 }
 

@@ -4,7 +4,7 @@
 	"copyright": "Copyright © 2016, dhasenan",
 	"authors": ["dhasenan"],
 	"dependencies": {
-    "pegged": "~>0.3.2"
+    "epub": "~master"
 	},
   "stringImportPaths": ["source"]
 }

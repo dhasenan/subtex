@@ -4,3 +4,5 @@ __dummy.html
 *.o
 *.obj
 *.swp
+__test__library__
+subtex

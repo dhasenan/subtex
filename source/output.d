@@ -351,7 +351,7 @@ class ToEpub {
       Attachment cover = {
         filename: "subtex_cover.svg",
         mimeType: "image/svg+xml",
-        data: cast(const(ubyte[]))cover(book)
+        content: cast(const(ubyte[]))cover(book)
       };
       b.attachments ~= cover;
     }
@@ -376,7 +376,7 @@ class ToEpub {
       Attachment css = {
         filename: path.baseName(stylesheet),
         mimeType: "text/css",
-        data: cast(const(ubyte[]))data
+        content: cast(const(ubyte[]))data
       };
       b.attachments ~= css;
     }
@@ -384,7 +384,7 @@ class ToEpub {
     Attachment defaultCss = {
       filename: "subtex.css",
       mimeType: "text/css",
-      data: cast(const(ubyte[]))subtex_css
+      content: cast(const(ubyte[]))subtex_css
     };
     b.attachments ~= defaultCss;
 

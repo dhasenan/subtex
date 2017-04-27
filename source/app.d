@@ -50,7 +50,7 @@ int main(string[] args)
     auto basePath = infile.dirName.absolutePath;
     string outpath = userOutPath;
     if (outpath == "") {
-      outpath = infile;
+      outpath = infile.baseName;
     }
     auto parser = new Parser(infile.readText());
     Book book;

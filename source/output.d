@@ -10,6 +10,8 @@ import std.path;
 import std.stdio;
 import std.string;
 import std.uuid;
+static import epub;
+alias Attachment = epub.Attachment;
 
 void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets, void delegate(ref OutRange) bdy) {
   sink.put(`<?xml version='1.0' encoding='utf-8'?>
@@ -319,18 +321,15 @@ class ToEpub {
   }
   bool run(Book book, ZipArchive zf) {
     bool success = true;
-    // mimetype should be the first entry in the zip.
-    // Unfortunately, this doesn't seem to happen...
-    save(zf, "mimetype", "application/epub+zip");
-    save(zf, "META-INF/container.xml", container_xml);
-    save(zf, "subtex.css", subtex_css);
-    writeVayne!contentOpf(zf, "content.opf", book);
-    writeVayne!titlepageXhtml(zf, "titlepage.xhtml", book);
-    writeVayne!tocNcx(zf, "toc.ncx", book);
-    if ("autocover" in book.info) {
-      writeVayne!cover(zf, "subtex_cover.svg", book);
-    }
+    auto b = new epub.Book;
+    epub.Chapter titlepage = {
+      title: "titlepage",
+      showInTOC: true,
+      content: titlepageXhtml(book)
+    };
+    b.chapters ~= titlepage;
     foreach (chapter; book.chapters) {
+      // TODO find referenced images
       Appender!string sink;
       sink.reserve(cast(size_t)(chapter.length * 1.2));
       book.htmlPrelude(sink, false, delegate void (ref Appender!string s) {
@@ -340,8 +339,23 @@ class ToEpub {
         nodeToHtml(chapter, s);
         s ~= `</p>`;
       });
-      save(zf, chapter.filename, sink.data);
+      epub.Chapter ch = {
+        title: chapter.title,
+        showInTOC: true,
+        content: sink.data
+      };
+      b.chapters ~= ch;
     }
+
+    if ("autocover" in book.info) {
+      Attachment cover = {
+        filename: "subtex_cover.svg",
+        mimeType: "image/svg+xml",
+        data: cast(const(ubyte[]))cover(book)
+      };
+      b.attachments ~= cover;
+    }
+
     foreach (stylesheet; book.stylesheets) {
       import path=std.path;
       import std.stdio : writefln;
@@ -359,12 +373,27 @@ class ToEpub {
             stylesheet, fullPath);
         success = false;
       }
-      save(zf, path.baseName(stylesheet), data);
+      Attachment css = {
+        filename: path.baseName(stylesheet),
+        mimeType: "text/css",
+        data: cast(const(ubyte[]))data
+      };
+      b.attachments ~= css;
     }
+
+    Attachment defaultCss = {
+      filename: "subtex.css",
+      mimeType: "text/css",
+      data: cast(const(ubyte[]))subtex_css
+    };
+    b.attachments ~= defaultCss;
+
+    epub.toEpub(b, zf);
+
     return success;
   }
+
 private:
-  enum container_xml = import("container.xml");
   enum subtex_css = import("subtex.css");
 
   void save(ZipArchive zf, string name, string content) {

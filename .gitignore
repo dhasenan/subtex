@@ -6,3 +6,5 @@ __dummy.html
 *.swp
 __test__library__
 subtex
+*.html
+*.epub

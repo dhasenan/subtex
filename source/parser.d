@@ -116,6 +116,7 @@ private:
             error("expected: \\def[bb|html]{name, value}");
         }
         auto name = data[0..k].strip;
+        data = data[k+1 .. $];
         auto endOfDef = data.indexOf('}');
         if (endOfDef < 0)
         {

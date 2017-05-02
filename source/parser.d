@@ -9,67 +9,29 @@ import std.string;
 enum infoStart = "\\info{";
 enum chapterStart = "\\chapter{";
 enum silentChapterStart = "\\chapter*{";
+enum macroStart = "\\macro{";
+enum defbb = "\\defbb{";
+enum defhtml = "\\defhtml{";
+
 class Parser
 {
-    string data, originalData;
     this(string data)
     {
         this.originalData = this.data = data;
     }
 
-    void skipWhitespace()
-    {
-        data = data.stripLeft;
-    }
-
     Book parse()
     {
         this.data = this.originalData;
-        auto book = new Book();
+        this.book = new Book();
         auto oldLength = data.length + 1;
         while (data.length && data.length < oldLength)
         {
             oldLength = data.length;
-            // We are guaranteed to get some set of \info bits, possibly empty, followed by \chapter.
-            skipWhitespace;
-            if (data.startsWith("%"))
-            {
-                auto end = data.indexOf("\n");
-                if (end == -1)
-                {
-                    return book;
-                }
-                data = data[end .. $];
-            }
-            if (data.startsWith(infoStart))
-            {
-                data = data[infoStart.length .. $];
-                auto next = data.indexOfAny("\n,");
-                if (next == -1 || data[next] == '\n')
-                {
-                    error("expected: `\\info{id, value}' -- you need a comma after the id");
-                }
-                auto s = data[0 .. next].strip();
-                data = data[next + 1 .. $];
-                next = data.indexOf("}");
-                if (next < 0)
-                {
-                    error("expected: `\\info{id, value}' -- you need a `}' after the value");
-                }
-                auto val = data[0 .. next].strip();
-                data = data[next + 1 .. $];
-                if (s in book.info)
-                {
-                    auto v = book.info[s];
-                    v ~= val;
-                    book.info[s] = v;
-                }
-                else
-                {
-                    book.info[s] = [val];
-                }
-            }
-            skipWhitespace();
+            // We get header elements only, followed by \chapter
+            skipWhiteComment();
+            parseHeaderBit();
+            skipWhiteComment();
             if (data.startsWith(chapterStart) || data.startsWith(silentChapterStart))
             {
                 break;
@@ -87,6 +49,110 @@ class Parser
             chapter.index = cast(int) i;
         }
         return book;
+    }
+
+private:
+    string data, originalData;
+    Book book;
+
+    bool parseHeaderBit()
+    {
+        if (data.startsWith(infoStart))
+        {
+            readInfo();
+        }
+        else if (data.startsWith(macroStart))
+        {
+            readMacro();
+        }
+        else if (data.startsWith(defbb))
+        {
+            data = data[defbb.length .. $];
+            readDef("bbcode");
+        }
+        else if (data.startsWith(defhtml))
+        {
+            data = data[defhtml.length .. $];
+            readDef("html");
+        }
+        else
+        {
+            return false;
+        }
+        return true;
+    }
+
+    void readMacro()
+    {
+        // TODO ensure that macro names are identifiers
+        auto pos = getPosition();
+        data = data[macroStart.length..$];
+        // A macro is a name followed by a series of definitions.
+        skipWhiteComment();
+        auto k = data.indexOf(',');
+        if (k < 0)
+        {
+            error("expected: \\macro{name, \\defbb{...} \\defhtml{...} ...}");
+        }
+        auto m = new Macro(data[0..k].strip, pos);
+        data = data[k+1..$];
+        parseNodeContents(m);
+        if (data.length == 0 || data[0] != '}')
+        {
+            error("unterminated macro", pos);
+        }
+        data = data[1..$];
+        book.macros[m.text] = m;
+    }
+
+    void readDef(string type)
+    {
+        // TODO ensure that def names are identifiers
+        auto start = getPosition();
+        skipWhiteComment();
+        auto k = data.indexOf(',');
+        if (k < 0)
+        {
+            error("expected: \\def[bb|html]{name, value}");
+        }
+        auto name = data[0..k].strip;
+        auto endOfDef = data.indexOf('}');
+        if (endOfDef < 0)
+        {
+            error("missing `}' in variable definition", start);
+        }
+        auto def = data[0..endOfDef].strip;
+        data = data[endOfDef+1 .. $];
+        book.defs[DefIdent(name, type)] = def;
+    }
+
+    void readInfo()
+    {
+        data = data[infoStart.length .. $];
+        auto next = data.indexOfAny("\n,");
+        if (next == -1 || data[next] == '\n')
+        {
+            error("expected: `\\info{id, value}' -- you need a comma after the id");
+        }
+        auto s = data[0 .. next].strip();
+        data = data[next + 1 .. $];
+        next = data.indexOf("}");
+        if (next < 0)
+        {
+            error("expected: `\\info{id, value}' -- you need a `}' after the value");
+        }
+        auto val = data[0 .. next].strip();
+        data = data[next + 1 .. $];
+        if (s in book.info)
+        {
+            auto v = book.info[s];
+            v ~= val;
+            book.info[s] = v;
+        }
+        else
+        {
+            book.info[s] = [val];
+        }
     }
 
     void parseChapters(Book book)
@@ -218,23 +284,79 @@ class Parser
                             cmd.uri = cmd.kids.map!(x => x.text).join("");
                         }
                     }
+                    else if (auto p = cmd.text in book.macros)
+                    {
+                        cmd = cast(Cmd)expandMacro(*p, cmd);
+                    }
                 }
                 parent.kids ~= cmd;
             }
         }
     }
 
-    private void error(string message)
+    Node expandMacro(Node m, Node orig)
+    {
+        Node n;
+        if (cast(Macro)m)
+        {
+            n = new Cmd(m.text, m.start);
+        }
+        else
+        {
+            n = m.dup;
+        }
+        foreach (c; m.kids)
+        {
+            if (c.text == "content")
+            {
+                n.kids ~= orig;
+            }
+            else
+            {
+                n.kids ~= expandMacro(c, orig);
+            }
+        }
+        return n;
+    }
+
+    void error(string message)
     {
         error(message, getPosition());
     }
 
-    private void error(string message, size_t position)
+    void error(string message, size_t position)
     {
         auto prefix = originalData[0 .. position];
         auto line = prefix.count!(x => x == '\n') + 1;
         auto col = prefix.length - prefix.lastIndexOf('\n');
         throw new ParseException("line %s col %s: %s".format(line, col, message));
+    }
+
+    void skipWhitespace()
+    {
+        data = data.stripLeft;
+    }
+
+    void skipWhiteComment()
+    {
+        while (data.length)
+        {
+            auto len = data.length;
+            data = data.stripLeft;
+            if (data.startsWith('%'))
+            {
+                auto end = data.indexOf('\n');
+                if (end < 0)
+                {
+                    data = "";
+                }
+                else
+                {
+                    data = data[end + 1 .. $];
+                }
+            }
+            if (len == data.length) break;
+        }
     }
 
     size_t getPosition()

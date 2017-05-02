@@ -1,6 +1,7 @@
 module subtex.books;
 
 import std.conv;
+import std.typecons;
 import std.uuid;
 
 class Book
@@ -13,6 +14,8 @@ class Book
 
     string[][string] info;
     Chapter[] chapters;
+    Macro[string] macros;
+    string[DefIdent] defs;
 
     string author()
     {
@@ -40,6 +43,12 @@ class Book
         }
         return null;
     }
+}
+
+struct DefIdent
+{
+    string name;
+    string type;
 }
 
 // A standard node is either a plain string, or a command, or a series of nodes.
@@ -71,6 +80,14 @@ class Node
     {
         return end() - start;
     }
+
+    Node dup()
+    {
+        auto n = new Node(text, start);
+        n.kids = kids.dup;
+        n.uri = uri;
+        return n;
+    }
 }
 
 class Cmd : Node
@@ -78,6 +95,14 @@ class Cmd : Node
     this(string text, size_t start)
     {
         super(text, start);
+    }
+
+    override Node dup()
+    {
+        auto n = new Cmd(text, start);
+        n.kids = kids.dup;
+        n.uri = uri;
+        return n;
     }
 }
 
@@ -120,5 +145,30 @@ class Chapter : Node
     string id()
     {
         return title.sha1UUID().to!string;
+    }
+
+    override Node dup()
+    {
+        auto n = new Chapter(silent, start);
+        n.kids = kids.dup;
+        n.uri = uri;
+        n.index = index;
+        n.chapterNum = chapterNum;
+        return n;
+    }
+}
+
+class Macro : Node
+{
+    this(string name, size_t start)
+    {
+        super(name, start);
+    }
+
+    override Node dup()
+    {
+        auto n = new Macro(text, start);
+        n.kids = kids.dup;
+        return n;
     }
 }

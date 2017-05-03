@@ -287,6 +287,9 @@ private:
                     }
                     else if (auto p = cmd.text in book.macros)
                     {
+                        auto t = cmd.text;
+                        cmd.text = "content";
+                        scope (exit) cmd.text = t;
                         cmd = cast(Cmd)expandMacro(*p, cmd);
                     }
                 }

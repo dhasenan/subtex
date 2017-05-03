@@ -7,7 +7,7 @@
 \defbb{be, [/b]}
 \defhtml{bs, <strong>}
 \defhtml{be, </strong>}
-\macro{foo, \bs{}\content{}\bs{}}
+\macro{foo, \bs{}\content{}\be{}}
 \macro{bar, like -- \content{}, ya know}
 
 % I'm not sure what should happen in this part.

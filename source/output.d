@@ -18,8 +18,8 @@ alias Attachment = epub.Attachment;
 void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets,
         void delegate(ref OutRange) bdy)
 {
-    sink.put(`<?xml version='1.0' encoding='utf-8'?>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+    sink.put(`<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
         <link rel="stylesheet" href="subtex.css" type="text/css"/>
@@ -47,9 +47,23 @@ void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets
 </html>`);
 }
 
-void nodeToHtml(OutRange)(Book book, Node node, ref OutRange sink)
+struct Tag { string tag, clazz; }
+struct NodeHtml(OutRange)
 {
     int quoteNest = 0;
+    OutRange* sink;
+    Book book;
+    Tag[] tagStack;
+
+    void nodeToHtml(Book book, Node node, ref OutRange sink)
+    {
+        this.quoteNest = 0;
+        this.sink = &sink;
+        this.book = book;
+        this.tagStack = [];
+
+        asHtml(node);
+    }
 
     string startQuote(int i = -1)
     {
@@ -77,6 +91,39 @@ void nodeToHtml(OutRange)(Book book, Node node, ref OutRange sink)
         }
     }
 
+    void startTag(Tag t)
+    {
+        sink.put(`<`);
+        sink.put(t.tag);
+        sink.put(` class="`);
+        sink.put(t.clazz);
+        sink.put(`">`);
+    }
+    void endTag(Tag t)
+    {
+        sink.put(`</`);
+        sink.put(t.tag);
+        sink.put(`>`);
+    }
+    void inTags(Node node, string tag, string clazz)
+    {
+        auto key = DefIdent(node.text, "html");
+        if (auto p = key in book.defs)
+        {
+            sink.put(*p);
+            return;
+        }
+        auto t = Tag(tag, clazz);
+        auto currStack = tagStack;
+        tagStack ~= t;
+        scope (exit) tagStack = currStack;
+        startTag(t);
+        foreach (kid; node.kids)
+        {
+            asHtml(kid);
+        }
+        endTag(t);
+    }
     void asHtml(Node node)
     {
         if (auto cmd = cast(Cmd) node)
@@ -95,20 +142,10 @@ void nodeToHtml(OutRange)(Book book, Node node, ref OutRange sink)
             case "emph":
             case "think":
             case "spell":
-                sink.put(`<em class="`);
-                sink.put(cmd.text);
-                sink.put(`">`);
-                foreach (kid; node.kids)
-                    asHtml(kid);
-                sink.put(`</em>`);
+                inTags(node, "em", cmd.text);
                 break;
             case "b":
-                sink.put(`<b class="`);
-                sink.put(cmd.text);
-                sink.put(`">`);
-                foreach (kid; node.kids)
-                    asHtml(kid);
-                sink.put(`</b>`);
+                inTags(node, "strong", cmd.text);
                 break;
             case "timeskip":
             case "scenebreak":
@@ -123,20 +160,7 @@ void nodeToHtml(OutRange)(Book book, Node node, ref OutRange sink)
                 sink.put(`" />`);
                 break;
             default:
-                sink.put(`<span class="`);
-                sink.put(cmd.text);
-                sink.put(`">`);
-                auto key = DefIdent(cmd.text, "html");
-                if (auto p = key in book.defs)
-                {
-                    sink.put(*p);
-                }
-                else
-                {
-                    foreach (kid; node.kids)
-                        asHtml(kid);
-                }
-                sink.put(`</span>`);
+                inTags(node, "span", cmd.text);
                 break;
             }
         }
@@ -149,9 +173,20 @@ void nodeToHtml(OutRange)(Book book, Node node, ref OutRange sink)
                 sink.put(sanitize(parts[0]));
                 foreach (part; parts[1 .. $])
                 {
+                    // We need to close all open tags to ensure proper nesting...
+                    foreach_reverse (t; tagStack)
+                    {
+                        endTag(t);
+                    }
                     sink.put(`</p>
 
 <p>`);
+                    // ...and reopen them after
+                    foreach (t; tagStack)
+                    {
+                        startTag(t);
+                    }
+
                     for (int i = quoteNest - 1; i >= 0; i--)
                     {
                         sink.put(startQuote(i));
@@ -168,8 +203,6 @@ void nodeToHtml(OutRange)(Book book, Node node, ref OutRange sink)
             }
         }
     }
-
-    asHtml(node);
 }
 
 string sanitize(string fragment)
@@ -395,7 +428,8 @@ class ToEpub
                     s ~= `<h2 class="chapter">`;
                     s ~= chapter.fullTitle;
                     s ~= `</h2><p>`;
-                    nodeToHtml(book, chapter, s);
+                    NodeHtml!(typeof(s)) h;
+                    h.nodeToHtml(book, chapter, s);
                     s ~= `</p>`;
                 });
                 epub.Chapter ch = {
@@ -697,7 +731,8 @@ class ToEpub
                                 auto outfile = File(fullPath, "w");
                                 auto writer = outfile.lockingTextWriter();
                                 book.htmlPrelude(writer, true, delegate void(ref typeof(writer) s) {
-                                    nodeToHtml!(typeof(s))(book, chapter, s);
+                                    NodeHtml!(typeof(s)) h;
+                                    h.nodeToHtml(book, chapter, s);
                                 });
                                 outfile.flush();
                                 outfile.close();
@@ -735,8 +770,10 @@ class ToEpub
                                 {
                                     sink.put(`<h2 class="chapter">`);
                                     sink.put(chapter.title);
-                                    sink.put(`</h2>`);
-                                    nodeToHtml!OutRange(book, chapter, sink);
+                                    sink.put(`</h2><p>`);
+                                    NodeHtml!OutRange h;
+                                    h.nodeToHtml(book, chapter, sink);
+                                    sink.put(`</p>`);
                                 }
                             });
                         }

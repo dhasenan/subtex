@@ -87,7 +87,8 @@ And he was like, \e{Subtex macros are \emph{spiffy},} ya know?
 The "mostly" is because the HTML output will wrap the text in a `<span class="like">`, just like
 using an undefined command.
 
-Within a macro, the special `\content{}` command refers to the stuff you passed into the macro.
+Within a macro, the special `\content{}` command refers to the stuff you passed into the macro. It
+turns into a `<span class="content">`.
 
 If you're so inclined, you can include the content multiple times:
 
@@ -99,7 +100,7 @@ If you're so inclined, you can include the content multiple times:
 This produces the HTML output:
 
 ```HTML
-<span class="repeat">Very nice. <em>Very nice.</em></span>
+<span class="repeat"><span class="content">Very nice.</span> <em><span class="content">Very nice.</span></em></span>
 ```
 
 

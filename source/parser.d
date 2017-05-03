@@ -287,6 +287,9 @@ private:
                     }
                     else if (auto p = cmd.text in book.macros)
                     {
+                        // Nodes are directly duplicated.
+                        // However, we want to distinguish the template as a whole from its content.
+                        // So we change its name temporarily and march on.
                         auto t = cmd.text;
                         cmd.text = "content";
                         scope (exit) cmd.text = t;

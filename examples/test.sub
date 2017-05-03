@@ -1,0 +1,33 @@
+\info{author, Christopher Wright}
+\info{title, Test Article}
+\info{stylesheet, foo.css}
+\info{autocover, true}
+
+\defbb{bs, [b]}
+\defbb{be, [/b]}
+\defhtml{bs, <strong>}
+\defhtml{be, </strong>}
+\macro{foo, \bs{}\content{}\bs{}}
+\macro{bar, like -- \content{}, ya know}
+
+% I'm not sure what should happen in this part.
+
+\chapter{Prelude}
+
+It was a dark and stormy night.
+
+\skip{}
+
+% Does it actually rain in the city?
+It was raining in the city. A \emph{hard} rain. Hard enough to \bar{wash the slime off a politician's back}.
+
+\chapter*{Interlude}
+
+Some things happened. \think{These things are \foo{happening}.} More things happened.
+
+\chapter{Postlude}
+
+\e{But no matter \emph{who} did it, it was always \e{my fault
+
+in the end,}} she said bitterly. \e{I
+just want proper attribution, you know?}

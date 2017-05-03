@@ -29,35 +29,29 @@ it's very difficult. Your choice is `latexml`, which has issues with including c
 
 Language
 --------
-A SubTex document starts with a *preamble*, which is a set of `\info` options. The allowed `\info` options are:
+See the `examples/` and `docs/` directories for more information.
 
-* `\info{author, Author's Name}` -- set the document's author(s).
-* `\info{title, Book Title}` -- set the document's title.
-* `\info{stylesheet, stylesheet path}` -- add a stylesheet to the document. May occur multiple times.
-* `\info{autocover, true}` -- automatically generate a cover image.
-* `\info{cover, path}` -- use the specified image as a cover image. Can be a path or a URI.
+However, a brief example should give a good impression of what SubTex is capable of:
 
-After the preamble comes the *body*, which consists of zero or more *chapters*. If you don't
-explicitly create a chapter, there is an implicit "Foreward" chapter.
+```LaTeX
+\info{author, Suetonius}
+\info{title, The Twelve Caesars}
+\info{stylesheet, suetonius.css}
 
-You may additionally include comments anywhere you wish. A comment begins with a `%` character and
-ends with a newline.
+\chapter{Caius Julius Caesar}
+Julius Caesar, the Divine, lost his father when he was in his sixteenth year of age.
+% Blank lines are transformed into new paragraphs.
 
-The body commands are:
+% The \e{} commanad enquotes text.
+One day, Sylla said to some friends, who were entreating him to be nice to Caesar: \e{Yeah, sure,
+he can hang with us.
 
-* `\chapter{title}` -- start a chapter with the given title.
-* `\chapter*{title}` -- start a chapter with the given title. It does not participate in numbering.
-* `\e{text}` -- quoted text. This yields curly quotes, handles nesting, and does the right thing for multiline quotes.
-* `\emph{text}` -- emphasized text. This turns into HTML `em` tags.
-* `\think{text}` -- a character thinking. Also turns into HTML `em` tags.
-* `\spell{text}` -- a character casting a spell. Also turns into HTML `em` tags.
-* `\scenebreak` -- a break between scenes. Turns into HTML `hr` tags.
-* `\timeskip` -- a break between scenes, specifically indicating a time break. Turns into HTML `hr` tags.
-* `\img{path}` -- include an image here. Can be a path or a URL.
+% It can handle multiline text.
+But you do know, right, that this kid you're so worked up about his safety, he's gonna be our
+downfall eventually?
 
-All commands, recognized or not, with the exception of `\e`, yield HTML elements with a `class` that
-matches the command name you used. So while both `\emph` and `\think` result in the same HTML tag,
-you can distinguish them with CSS.
+I mean, you told me to take care of the nobles, but this guy's cut from the same cloth as Marius.}
+```
 
 
 Building
@@ -101,23 +95,6 @@ just print out the number of words.
 Example document
 ----------------
 An example document:
-```LaTeX
-\info{author, Suetonius}
-\info{title, The Twelve Caesars}
-\info{stylesheet, suetonius.css}
-
-\chapter{Caius Julius Caesar}
-Julius Caesar, the Divine, lost his father when he was in his sixteenth year of age.
-
-% Heavily rephrased.
-One day, Sylla said to some friends, who were entreating him to be nice to Caesar: \e{Yeah, sure,
-he can hang with us.
-
-But you do know, right, that this kid you're so worked up about his safety, he's gonna be our
-downfall eventually?
-
-I mean, you told me to take care of the nobles, but this guy's cut from the same cloth as Marius.}
-```
 
 And that produces the following document:
 

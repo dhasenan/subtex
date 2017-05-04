@@ -1,11 +1,5 @@
-* Treat N>1 consecutive newlines as a paragraph start (no empty paragraphs)
-* Verify the output works with Calibre's ebook converter
+* Reduce / remove empty paragraphs
 * Verify the output with Kindle Direct Publishing
-* Cover image
-* Inline images
 * Quote marks in text / markdown
 * Text reflow in text / markdown
-* scenebreak / timeskip macros (change appearance per book, to image or text)
 * (if necessary) azw3 output
-* \style macro?
-* full macros

@@ -48,21 +48,83 @@ void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets
 }
 
 struct Tag { string tag, clazz; }
+struct HtmlOut(OutRange)
+{
+    Tag[] tagStack;
+    bool atParagraphEnd = true;
+    OutRange* sink;
+
+    void startTag(Tag t)
+    {
+        inline(`<`);
+        inline(t.tag);
+        inline(` class="`);
+        inline(t.clazz);
+        inline(`">`);
+    }
+
+    void endTag(Tag t)
+    {
+        inline(`</`);
+        inline(t.tag);
+        inline(`>`);
+    }
+
+    void inline(string data)
+    {
+        if (data.length == 0)
+        {
+            return;
+        }
+        if (atParagraphEnd)
+        {
+            atParagraphEnd = false;
+            sink.put("<p>");
+            foreach (t; tagStack)
+            {
+                startTag(t);
+            }
+        }
+        sink.put(data);
+    }
+
+    void interParagraph(string data)
+    {
+        breakParagraph(this.tagStack);
+        sink.put(data);
+    }
+
+    void breakParagraph(Tag[] tagStack)
+    {
+        if (atParagraphEnd)
+        {
+            return;
+        }
+        this.tagStack = tagStack;
+        foreach_reverse (t; tagStack)
+        {
+            endTag(t);
+        }
+        sink.put("</p>\n\n");
+        atParagraphEnd = true;
+    }
+}
+
 struct NodeHtml(OutRange)
 {
     int quoteNest = 0;
-    OutRange* sink;
+    HtmlOut!OutRange sink;
     Book book;
     Tag[] tagStack;
 
-    void nodeToHtml(Book book, Node node, ref OutRange sink)
+    void nodeToHtml(Book book, Chapter chapter, ref OutRange sink)
     {
         this.quoteNest = 0;
-        this.sink = &sink;
+        this.sink.sink = &sink;
         this.book = book;
         this.tagStack = [];
 
-        asHtml(node);
+        asHtml(chapter);
     }
 
     string startQuote(int i = -1)
@@ -91,39 +153,26 @@ struct NodeHtml(OutRange)
         }
     }
 
-    void startTag(Tag t)
-    {
-        sink.put(`<`);
-        sink.put(t.tag);
-        sink.put(` class="`);
-        sink.put(t.clazz);
-        sink.put(`">`);
-    }
-    void endTag(Tag t)
-    {
-        sink.put(`</`);
-        sink.put(t.tag);
-        sink.put(`>`);
-    }
     void inTags(Node node, string tag, string clazz)
     {
         auto key = DefIdent(node.text, "html");
         if (auto p = key in book.defs)
         {
-            sink.put(*p);
+            sink.inline(*p);
             return;
         }
         auto t = Tag(tag, clazz);
         auto currStack = tagStack;
         tagStack ~= t;
         scope (exit) tagStack = currStack;
-        startTag(t);
+        sink.startTag(t);
         foreach (kid; node.kids)
         {
             asHtml(kid);
         }
-        endTag(t);
+        sink.endTag(t);
     }
+
     void asHtml(Node node)
     {
         if (auto cmd = cast(Cmd) node)
@@ -131,12 +180,12 @@ struct NodeHtml(OutRange)
             switch (cmd.text)
             {
             case "e":
-                sink.put(startQuote);
+                sink.inline(startQuote);
                 quoteNest++;
                 foreach (kid; node.kids)
                     asHtml(kid);
                 quoteNest--;
-                sink.put(endQuote);
+                sink.inline(endQuote);
                 break;
             case "i":
             case "emph":
@@ -150,14 +199,12 @@ struct NodeHtml(OutRange)
             case "timeskip":
             case "scenebreak":
                 // This has to come between paragraphs
-                sink.put(`</p><hr class="`);
-                sink.put(cmd.text);
-                sink.put(`" /><p>`);
+                sink.interParagraph(`<hr class="` ~ cmd.text ~ `"/>`);
                 break;
             case "img":
-                sink.put(`<img src="`);
-                sink.put(cmd.uri);
-                sink.put(`" />`);
+                sink.inline(`<img src="`);
+                sink.inline(cmd.uri);
+                sink.inline(`" />`);
                 break;
             default:
                 inTags(node, "span", cmd.text);
@@ -170,28 +217,15 @@ struct NodeHtml(OutRange)
             {
                 auto parts = node.text.split("\n\n");
                 // This will be empty string if the node started with '\n\n'
-                sink.put(sanitize(parts[0]));
+                sink.inline(sanitize(parts[0]));
                 foreach (part; parts[1 .. $])
                 {
-                    // We need to close all open tags to ensure proper nesting...
-                    foreach_reverse (t; tagStack)
-                    {
-                        endTag(t);
-                    }
-                    sink.put(`</p>
-
-<p>`);
-                    // ...and reopen them after
-                    foreach (t; tagStack)
-                    {
-                        startTag(t);
-                    }
-
+                    sink.breakParagraph(tagStack);
                     for (int i = quoteNest - 1; i >= 0; i--)
                     {
-                        sink.put(startQuote(i));
+                        sink.inline(startQuote(i));
                     }
-                    sink.put(part.replace("&", "&amp;").replace(" -- ", "&#x2014;")
+                    sink.inline(part.replace("&", "&amp;").replace(" -- ", "&#x2014;")
                             .replace(" --", "&#x2013;").replace("-- ",
                                 "&#x2013;").replace("--", "&#x2013;"));
                 }
@@ -427,7 +461,7 @@ class ToEpub
                 book.htmlPrelude(sink, false, delegate void(ref Appender!string s) {
                     s ~= `<h2 class="chapter">`;
                     s ~= chapter.fullTitle;
-                    s ~= `</h2><p>`;
+                    s ~= `</h2>`;
                     NodeHtml!(typeof(s)) h;
                     h.nodeToHtml(book, chapter, s);
                     s ~= `</p>`;
@@ -770,7 +804,9 @@ class ToEpub
                                 {
                                     sink.put(`<h2 class="chapter">`);
                                     sink.put(chapter.title);
-                                    sink.put(`</h2><p>`);
+                                    sink.put(`</h2>
+
+`);
                                     NodeHtml!OutRange h;
                                     h.nodeToHtml(book, chapter, sink);
                                     sink.put(`</p>`);

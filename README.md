@@ -29,7 +29,7 @@ it's very difficult. Your choice is `latexml`, which has issues with including c
 
 Language
 --------
-See the `examples/` and `docs/` directories for more information.
+See `examples/` and `language.md` for more information.
 
 However, a brief example should give a good impression of what SubTex is capable of:
 
@@ -46,7 +46,7 @@ Julius Caesar, the Divine, lost his father when he was in his sixteenth year of 
 One day, Sylla said to some friends, who were entreating him to be nice to Caesar: \e{Yeah, sure,
 he can hang with us.
 
-% It can handle multiline text.
+% It can handle multiline quotes.
 But you do know, right, that this kid you're so worked up about his safety, he's gonna be our
 downfall eventually?
 

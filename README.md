@@ -94,9 +94,7 @@ just print out the number of words.
 
 Example document
 ----------------
-An example document:
-
-And that produces the following document:
+The above example document produces the following document:
 
 ```HTML
 <?xml version='1.0' encoding='utf-8'?>

@@ -30,7 +30,7 @@ void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets
         {
             sink.put(`<link rel="stylesheet" href="`);
             sink.put(stylesheet);
-            sink.put(`" type="text"/>
+            sink.put(`" type="text/html"/>
           `);
         }
     }

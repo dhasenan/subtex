@@ -350,6 +350,18 @@ private:
         {
             auto len = data.length;
             data = data.stripLeft;
+            if (data.startsWith("<%"))
+            {
+                auto end = data.indexOf("%>");
+                if (end < 0)
+                {
+                    data = "";
+                }
+                else
+                {
+                    data = data[end + 2 .. $];
+                }
+            }
             if (data.startsWith('%'))
             {
                 auto end = data.indexOf('\n');

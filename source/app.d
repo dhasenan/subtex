@@ -1,6 +1,7 @@
 module subtex.app;
 
 import subtex.books;
+import subtex.formats;
 import subtex.output;
 import subtex.parser;
 
@@ -18,21 +19,29 @@ import std.zip;
 int main(string[] args)
 {
     import std.getopt;
+    auto writers = subtex.formats.writers();
 
     string[] formats = [];
     string userOutPath;
     bool count = false;
     bool chapterCount = false;
-    auto info = getopt(args, std.getopt.config.passThrough, "formats|f",
-            "The output formats (epub, html, text, markdown, bbcode, chapters)",
-            &formats, "out|o", "Output file base name.",
-            &userOutPath, "count|c", "Count words in input documents", &count,
+    auto info = getopt(args, std.getopt.config.passThrough,
+            "formats|f", "Output formats. Use -f list to list.", &formats,
+            "out|o", "Output file base name.", &userOutPath,
+            "count|c", "Count words in input documents", &count,
             "chaptercount|d", "Count words in input documents", &chapterCount,);
     if (info.helpWanted)
     {
         defaultGetoptPrinter("subtex: producing ebooks from a simple TeX-like language",
                 info.options);
         return 0;
+    }
+    if (formats.canFind("list"))
+    {
+        foreach (k, v; writers)
+        {
+            writeln(k);
+        }
     }
     if (args.length < 2)
     {
@@ -93,80 +102,9 @@ int main(string[] args)
                 writefln("%s %s: %s", infile, c.title, words);
             }
         }
-        if (formats.canFind("epub"))
-        {
-            auto epubOut = outpath.stripExtension() ~ ".epub";
-            auto zf = new ZipArchive();
-            auto toEpub = new ToEpub(basePath);
-            success = success && toEpub.run(book, zf);
-            auto outfile = File(epubOut, "w");
-            outfile.rawWrite(zf.build());
-            outfile.close();
-        }
-        if (formats.canFind("html"))
-        {
-            if (outpath == "-")
-            {
-                auto writer = stdout.lockingTextWriter();
-                auto toHtml = new ToHtml!(typeof(writer))(book, writer);
-                toHtml.run();
-            }
-            else
-            {
-                auto htmlOut = outpath.stripExtension() ~ ".html";
-                auto outfile = File(htmlOut, "w");
-                auto writer = outfile.lockingTextWriter();
-                auto toHtml = new ToHtml!(typeof(writer))(book, writer);
-                toHtml.run();
-                outfile.flush();
-                outfile.close();
-            }
-        }
-        if (formats.canFind("markdown"))
-        {
-            auto mdOut = outpath.stripExtension() ~ ".md";
-            auto outfile = File(mdOut, "w");
-            auto writer = outfile.lockingTextWriter();
-            auto toHtml = new ToMarkdown!(typeof(writer))(book, writer);
-            toHtml.run();
-            outfile.flush();
-            outfile.close();
-        }
-        if (formats.canFind("bbcode"))
-        {
-            auto mdOut = outpath.stripExtension() ~ ".bbcode";
-            auto outfile = File(mdOut, "w");
-            auto writer = outfile.lockingTextWriter();
-            auto toHtml = new ToBbcode!(typeof(writer))(book, writer);
-            toHtml.run();
-            outfile.flush();
-            outfile.close();
-        }
-        if (formats.canFind("text"))
-        {
-            if (outpath == "-")
-            {
-                auto writer = stdout.lockingTextWriter();
-                auto toHtml = new ToText!(typeof(writer))(book, writer);
-                toHtml.run();
-            }
-            else
-            {
-                auto mdOut = outpath.stripExtension() ~ ".txt";
-                auto outfile = File(mdOut, "w");
-                auto writer = outfile.lockingTextWriter();
-                auto toHtml = new ToText!(typeof(writer))(book, writer);
-                toHtml.run();
-                outfile.flush();
-                outfile.close();
-            }
-        }
-        if (formats.canFind("chapters"))
-        {
-            auto outdir = outpath.stripExtension;
-            new ToChapters(book, outdir).toChapters();
-        }
     }
+    import core.memory : GC;
+    GC.collect();
     if (success)
         return 0;
     return 1;

@@ -18,6 +18,11 @@ import std.zip;
 
 int main(string[] args)
 {
+    version (linux)
+    {
+        import etc.linux.memoryerror;
+        registerMemoryErrorHandler();
+    }
     import std.getopt;
     auto writers = subtex.formats.writers();
 
@@ -54,6 +59,11 @@ int main(string[] args)
         formats = ["epub", "html"];
     }
 
+    auto w = formats
+        .map!(x => x in writers)
+        .filter!(x => x !is null)
+        .map!(x => *x);
+
     bool success = true;
     foreach (infile; args[1 .. $])
     {
@@ -63,7 +73,11 @@ int main(string[] args)
         {
             outpath = infile.baseName;
         }
-        auto parser = new Parser(infile.readText());
+        string readFile(string filename)
+        {
+            return buildPath(basePath, filename).readText;
+        }
+        auto parser = new Parser(infile, infile.readText, &readFile);
         Book book;
         try
         {
@@ -77,6 +91,14 @@ int main(string[] args)
         {
             stderr.writefln("Failed to parse %s", infile);
             return 1;
+        }
+
+        foreach (ww; w)
+        {
+            if (!ww(book, outpath))
+            {
+                stderr.writefln("failed to write %s", infile);
+            }
         }
 
         if (count)
@@ -102,6 +124,8 @@ int main(string[] args)
                 writefln("%s %s: %s", infile, c.title, words);
             }
         }
+
+        
     }
     import core.memory : GC;
     GC.collect();

@@ -1,0 +1,4 @@
+\info{title, Anger}
+\macro{emotion, angry!}
+\macro{verb, go on a rampage}
+\import{emotion.sub}

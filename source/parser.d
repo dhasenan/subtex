@@ -9,15 +9,20 @@ import std.string;
 enum infoStart = "\\info{";
 enum chapterStart = "\\chapter{";
 enum silentChapterStart = "\\chapter*{";
+enum importStatement = "\\import{";
 enum macroStart = "\\macro{";
 enum defbb = "\\defbb{";
 enum defhtml = "\\defhtml{";
 
+alias FileReader = string delegate(string);
+
 class Parser
 {
-    this(string data)
+    this(string filename, string data, FileReader reader)
     {
+        this.filename = filename;
         this.originalData = this.data = data;
+        this.reader = reader;
     }
 
     Book parse()
@@ -32,7 +37,7 @@ class Parser
             skipWhiteComment();
             parseHeaderBit();
             skipWhiteComment();
-            if (data.startsWith(chapterStart) || data.startsWith(silentChapterStart))
+            if (chapterBoundary)
             {
                 break;
             }
@@ -53,6 +58,8 @@ class Parser
 
 private:
     string data, originalData;
+    string filename;
+    FileReader reader;
     Book book;
 
     bool parseHeaderBit()
@@ -160,6 +167,8 @@ private:
     {
         while (data.length > 0)
         {
+            skipWhiteComment;
+            if (data.length == 0) break;
             bool silent = false;
             if (data.startsWith(chapterStart))
             {
@@ -169,6 +178,21 @@ private:
             {
                 silent = true;
                 data = data[silentChapterStart.length .. $];
+            }
+            else if (data.startsWith(importStatement))
+            {
+                data = data[importStatement.length .. $];
+                auto end = data.indexOf('}');
+                if (end < 0)
+                {
+                    error("expected '}' after import statement");
+                }
+                auto childFilename = data[0..end];
+                data = data[end + 1 .. $];
+                auto childParser = new Parser(childFilename, reader(childFilename), reader);
+                childParser.book = book;
+                childParser.parseChapters(book);
+                continue;
             }
             else
             {
@@ -187,11 +211,18 @@ private:
         }
     }
 
+    bool chapterBoundary()
+    {
+        return data.startsWith(chapterStart)
+            || data.startsWith(silentChapterStart)
+            || data.startsWith(importStatement);
+    }
+
     void parseNodeContents(Node parent)
     {
         while (data.length > 0)
         {
-            if (data.startsWith(chapterStart) || data.startsWith(silentChapterStart))
+            if (chapterBoundary)
             {
                 return;
             }
@@ -336,7 +367,7 @@ private:
         auto prefix = originalData[0 .. position];
         auto line = prefix.count!(x => x == '\n') + 1;
         auto col = prefix.length - prefix.lastIndexOf('\n');
-        throw new ParseException("line %s col %s: %s".format(line, col, message));
+        throw new ParseException("%s(%s:%s): %s".format(filename, line, col, message));
     }
 
     void skipWhitespace()

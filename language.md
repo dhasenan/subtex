@@ -93,14 +93,16 @@ turns into a `<span class="content">`.
 If you're so inclined, you can include the content multiple times:
 
 ```
-\macro{repeat, \content{} \emph{\content{}}}
+\macro{repeat, \content{}
+\emph{\content{}}}
 \repeat{Very nice.}
 ```
 
 This produces the HTML output:
 
 ```HTML
-<span class="repeat"><span class="content">Very nice.</span> <em><span class="content">Very nice.</span></em></span>
+<span class="repeat"><span class="content">Very nice.</span>
+<em><span class="content">Very nice.</span></em></span>
 ```
 
 
@@ -112,6 +114,52 @@ A macro can only refer to macros and definitions defined before it.
 
 
 
+# Chapters
+
+A subtex file is a series of chapters.
+
+1. `\chapter{title}` starts a numbered chapter named `title`.
+2. `\chapter*{title}` starts an unnumbered chapter named `title`.
+3. `\import{filename}` reads in one or more chapters from `filename` and inserts them into the book.
+
+For example:
+
+```LaTeX
+\info{title, Anna Karenina}
+\chapter*{Foreward}
+Leo Tolstoy's classic work.
+
+% Chapter 1: Stiva
+\chapter{Stiva}
+Happy families are all alike in their happiness; unhappy families are each unique in their misery.
+
+% contains chapters 2, 3, and 4
+\import{part1.sub}
+
+% Chapter 5: To the spa!
+\chapter{To the spa!}
+Vronsky's rejection hit hard.
+```
+
+That's fine as a top level document.
+
+Here's a document that's not valid for importing:
+
+```LaTeX
+This is part of the previous chapter.
+```
+
+Why not? Because the imported file must be a series of chapters.
+
+## Macros in imported documents
+
+Imported documents inherit all the macros, definitions, and options defined where they are imported.
+They cannot create new macros or definitions.
+
+Most of the time, this should work just as you'd expect, but you can do some madlibs-style parlor
+tricks with it.
+
+
 # Main content
 
 After the preamble comes the body, which consists of zero or more chapters. If you don't
@@ -121,14 +169,14 @@ explicitly create a chapter, there is an implicit "Foreward" chapter.
 
 The default body commands are:
 
-* `\chapter{title}` -- start a chapter with the given title.
-* `\chapter*{title}` -- start a chapter with the given title. It does not participate in numbering.
-* `\e{text}` -- quoted text. This yields curly quotes, handles nesting, and does the right thing for multiline quotes.
+* `\e{text}` -- quoted text. This yields curly quotes, handles nesting, and does the right thing for
+  multiline quotes.
 * `\emph{text}` -- emphasized text. This turns into HTML `em` tags.
 * `\think{text}` -- a character thinking. Also turns into HTML `em` tags.
 * `\spell{text}` -- a character casting a spell. Also turns into HTML `em` tags.
 * `\scenebreak` -- a break between scenes. Turns into HTML `hr` tags.
-* `\timeskip` -- a break between scenes, specifically indicating a time break. Turns into HTML `hr` tags.
+* `\timeskip` -- a break between scenes, specifically indicating a time break. Turns into HTML `hr`
+  tags.
 * `\img{path}` -- include an image here. Can be a path or a URL.
 
 All commands, recognized or not, with the exception of `\e`, yield HTML elements with a `class` that
@@ -158,3 +206,4 @@ turns into
 ```HTML
 <span class="undefinedCommand">This is some text!</span>
 ```
+

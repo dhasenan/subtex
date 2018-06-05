@@ -1,0 +1,5 @@
+\info{title, Happiness}
+\macro{emotion, happy!}
+\macro{verb, sing}
+\import{emotion.sub}
+

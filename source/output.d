@@ -905,6 +905,12 @@ class ToBbcode(OutRange)
                     sink.put(`[/inline]`);
                     return;
                 default:
+                    auto key = DefIdent(cmd.text, "bbcode");
+                    if (auto p = key in book.defs)
+                    {
+                        sink.put(*p);
+                        return;
+                    }
                     foreach (kid; node.kids)
                     {
                         writeNode(kid);

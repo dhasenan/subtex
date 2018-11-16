@@ -2,3 +2,9 @@
 
 \chapter{Nameless}
 This is \emph{italic and \b{bold.}}
+<%
+This is a block comment.
+It extends several lines.
+%>
+
+This is another paragraph. % And this is a line comment.

@@ -230,7 +230,7 @@ private:
             {
                 return;
             }
-            auto i = data.indexOfAny("%\\}");
+            auto i = data.indexOfAny("%\\}<");
             if (i == -1)
             {
                 // We don't have any more special characters for the rest of time.
@@ -271,6 +271,18 @@ private:
                 }
                 data = data[j + 1 .. $];
                 continue;
+            }
+            if (data.startsWith("<%"))
+            {
+                data = data[2..$];
+                auto j = data.indexOf("%>");
+                if (j < 0)
+                {
+                    error("Unterminated block comment. Terminate with %>.");
+                    data = "";
+                    continue;
+                }
+                data = data[j+2 .. $];
             }
             if (data.startsWith("\\"))
             {

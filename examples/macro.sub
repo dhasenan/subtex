@@ -1,0 +1,7 @@
+\info{title, Macro Test}
+\macro{upper, \emph{[\content{}]}}
+
+\chapter{}
+Some text!
+
+\upper{hi}

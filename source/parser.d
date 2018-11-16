@@ -99,10 +99,11 @@ private:
         auto k = data.indexOf(',');
         if (k < 0)
         {
-            error("expected: \\macro{name, \\defbb{...} \\defhtml{...} ...}");
+            error("expected: \\macro{name, expansion}");
         }
         auto m = new Macro(data[0..k].strip, pos);
         data = data[k+1..$];
+        skipWhiteComment();
         parseNodeContents(m);
         if (data.length == 0 || data[0] != '}')
         {
@@ -354,6 +355,10 @@ private:
         else
         {
             n = m.dup;
+            if (cast(Cmd)n)
+            {
+                n.kids = null;
+            }
         }
         foreach (c; m.kids)
         {

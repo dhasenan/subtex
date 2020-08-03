@@ -31,6 +31,7 @@ struct Lexer
     import std.typecons : Tuple, tuple;
     private string data, originalData, filename;
     private ushort fileId;
+    private bool _skipWhitespace = true;
 
     this(string filename)
     {
@@ -39,6 +40,19 @@ struct Lexer
         fileId = Files.id(filename);
         originalData = data;
         popFront;
+    }
+
+    private bool skipWhitespace() { return _skipWhitespace; }
+    private void skipWhitespace(bool v)
+    {
+        _skipWhitespace = v;
+        if (_skipWhitespace)
+        {
+            if (front.kind == Kind.text && front.content.strip == "")
+            {
+                popFront;
+            }
+        }
     }
 
     private Position position()
@@ -64,10 +78,13 @@ struct Lexer
 
     void popFront()
     {
-        do
+        while (!empty)
         {
             _popFront;
-        } while (!empty && front.kind == Kind.text && front.content.strip == "");
+            if (!_skipWhitespace) break;
+            if (front.kind != Kind.text) break;
+            if (front.content.strip.length > 0) break;
+        }
     }
 
     void _popFront()
@@ -208,6 +225,7 @@ class Parser
 
     public Chapter[] parseChapters()
     {
+        lexer.skipWhitespace = false;
         Chapter[] chapters;
         Chapter current;
         while (!lexer.empty)
@@ -255,6 +273,7 @@ class Parser
     {
         book = new Book;
         book.mainFile = lexer.filename.absolutePath;
+        if (lexer.front.kind == Kind.text && lexer.front.content.strip == "") lexer.popFront;
         while (!lexer.empty)
         {
             if (!tryParseHeaderBit)
@@ -411,6 +430,7 @@ class Parser
             case "macro":
             case "macrohtml":
             case "macrobb":
+                lexer.skipWhitespace = false;
                 // parsed *almost* as a normal node
                 if (lexer.empty || lexer.front.kind != Kind.start)
                 {
@@ -449,6 +469,7 @@ class Parser
                 {
                     error("expected '}'");
                 }
+                lexer.skipWhitespace = true;
                 lexer.popFront;
                 m.kids = rest ~ m.kids;
                 auto ident = DefIdent(m.text, m.kind);

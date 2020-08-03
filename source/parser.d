@@ -311,7 +311,7 @@ class Parser
         switch (name)
         {
             case "content":
-                return new Content(content.to!size_t, start);
+                return new Content(content ? content.to!size_t : Content.all, start);
             case "import":
                 return new Import(absolutePath(content, lexer.filename), start);
             case "chapter":
@@ -378,8 +378,10 @@ class Parser
                 {
                     error("expected definition");
                 }
+                lexer.popFront;
                 auto start = lexer.front.position;
                 auto t = lexer.front.content;
+                writefln("defining with first segment %s", t);
                 auto comma = t.indexOf(',');
                 string name;
                 Node rest;
@@ -401,12 +403,19 @@ class Parser
                 // In the rare case that you have a definition like:
                 // \macro{a<%stuff%>,<%comment%>\content}
                 // this will do an extra allocation. I can live with it.
-                rest = new Node(t[name.length + 1 .. $], start + comma + 1);
+                rest = new Node(t[name.length + 1 .. $].stripLeft, start + comma + 1);
                 lexer.popFront;
                 auto m = new Macro(name, tok.position);
                 parseBody(m);
+                if (lexer.empty || lexer.front.kind != Kind.end)
+                {
+                    error("expected '}'");
+                }
+                lexer.popFront;
                 m.kids = rest ~ m.kids;
-                book.defs[DefIdent(m.text, m.kind)] = m;
+                auto ident = DefIdent(m.text, m.kind);
+                book.defs[ident] = m;
+                writefln("definition: %s => %s", ident, m);
                 break;
             default:
 
@@ -478,6 +487,7 @@ struct Expander
     Node expand()
     {
         Node root = new Cmd(c.text, c.start);
+        root.parent = c.parent;
         root.kids = m.kids;
         _expand(root);
         return root;

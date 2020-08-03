@@ -31,18 +31,22 @@ int main(string[] args)
         registerMemoryErrorHandler();
     }
     import std.getopt;
-    auto writers = subtex.formats.writers();
+    auto allWriters = subtex.formats.writers();
 
-    string[] formats = [];
+    string[] formats = ["epub", "html"];
     string userOutPath;
+    bool quiet = false;
     bool count = false;
     bool chapterCount = false;
     bool watch = false;
+    bool lexOnly = false;
     auto info = getopt(args, std.getopt.config.passThrough,
             "formats|f", "Output formats. Use -f list to list.", &formats,
             "out|o", "Output file base name.", &userOutPath,
             "count|c", "Count words in input documents", &count,
             "chaptercount|d", "Count words in input documents", &chapterCount,
+            "quiet|q", "Write minimal output", &quiet,
+            "lex-only", "Debug: only lex the file, don't parse", &lexOnly,
             "watch", "Watch for changes and rerun (linux only)", &watch);
     if (info.helpWanted)
     {
@@ -60,7 +64,7 @@ int main(string[] args)
     }
     if (formats.canFind("list"))
     {
-        foreach (k, v; writers)
+        foreach (k, v; allWriters)
         {
             writeln(k);
         }
@@ -71,25 +75,30 @@ int main(string[] args)
         return 1;
     }
 
-    if (formats.length == 0)
+    if (lexOnly)
     {
-        formats = ["epub", "html"];
+        foreach (arg; args[1..$])
+        {
+            auto lexer = Lexer(arg, std.file.readText(arg));
+            long tokcount = 0;
+            while (!lexer.empty)
+            {
+                tokcount++;
+                writeln(lexer.front);
+                lexer.popFront;
+            }
+            writefln("%s: %s tokens", arg, tokcount);
+        }
+        return 0;
     }
 
-    auto w = formats
-        .map!(x => x in writers)
+    auto writers = formats
+        .map!(x => x in allWriters)
         .filter!(x => x !is null)
         .map!(x => *x);
 
-    int inotifyfd;
-    immutable(char)*[] waitPaths;
-    if (watch)
-    {
-        inotifyfd = inotify_init;
-        waitPaths = args[1..$].map!toStringz.array;
-    }
-    void[] inotifybuf = new void[4096];
     bool success = true;
+    string[] filesToWatch;
     do
     {
         foreach (infile; args[1 .. $])
@@ -104,28 +113,49 @@ int main(string[] args)
             {
                 return buildPath(basePath, filename).readText;
             }
-            auto parser = new Parser(infile, infile.readText, &readFile);
+            auto lexer = Lexer(infile, infile.readText);
+            auto parser = new Parser(lexer);
             Book book;
             try
             {
-                book = parser.parse();
+                book = parser.parseBook;
+                filesToWatch ~= book.files;
             }
             catch (ParseException e)
             {
-                writefln("%s\nerror processing %s", e.msg, infile);
-            }
-            if (book is null)
-            {
-                stderr.writefln("Failed to parse %s", infile);
-                return 1;
+                filesToWatch ~= infile;
+                if (!quiet)
+                {
+                    stderr.writefln("%s\nerror processing %s", e.msg, infile);
+                }
+                if (!watch)
+                {
+                    return 1;
+                }
+                continue;
             }
 
-            foreach (ww; w)
+            // Do we need multiple output kinds?
+            auto kinds = writers.map!(x => x.kind).array.sort.uniq.array;
+            if (kinds.length == 1)
             {
-                if (!ww(book, outpath))
+                expandMacros(book, kinds[0]);
+                foreach (ww; writers)
+                    if (!ww.write(book, outpath))
+                        stderr.writefln("%s: failed to write %s", infile, ww.format);
+            }
+            else
+            {
+                Book[string] byKind;
+                foreach (kind; kinds)
                 {
-                    stderr.writefln("failed to write %s", infile);
+                    auto b = book.dup;
+                    expandMacros(b, kind);
+                    byKind[kind] = b;
                 }
+                foreach (ww; writers)
+                    if (!ww.write(byKind[ww.kind], outpath))
+                        stderr.writefln("%s: failed to write %s", infile, ww.format);
             }
 
             if (count)
@@ -135,7 +165,14 @@ int main(string[] args)
                 auto toHtml = new ToText!(typeof(writer))(book, writer);
                 toHtml.run();
                 auto words = std.algorithm.count(splitter(writer.data));
-                writefln("%s: %s", infile, words);
+                if (args.length > 2)
+                {
+                    writefln("%s: %s", infile, words);
+                }
+                else
+                {
+                    writeln(words);
+                }
             }
             if (chapterCount)
             {
@@ -156,14 +193,20 @@ int main(string[] args)
         GC.collect();
         if (watch)
         {
-            writeln("created ebooks");
+            int inotifyfd;
+            immutable(char)*[] waitPaths;
+            if (watch)
+            {
+                inotifyfd = inotify_init;
+                waitPaths = filesToWatch.map!toStringz.array;
+            }
+            void[] inotifybuf = new void[4096];
             foreach (name; waitPaths)
             {
                 inotify_add_watch(inotifyfd, name, 2);
             }
             // It would be more efficient to update only the affected items.
             // However, that would mean more complex code.
-            // TODO: make this work for multifile books
             read(inotifyfd, inotifybuf.ptr, inotifybuf.length);
         }
     } while (watch);

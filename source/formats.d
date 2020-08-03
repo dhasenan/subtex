@@ -7,24 +7,28 @@ import std.path;
 import subtex.books;
 import subtex.output;
 
-alias writer = bool delegate(Book, string);
-
-writer[string] writers()
+struct Writer
 {
-    writer[string] w;
-    w["epub"] = (book, outpath)
+    string format;
+    string kind;
+    bool delegate(Book, string) write;
+}
+
+Writer[string] writers()
+{
+    Writer[string] w;
+    w["epub"] = Writer("epub", "html", (book, outpath)
     {
         auto epubOut = outpath.stripExtension() ~ ".epub";
         auto zf = new ZipArchive();
-        auto basePath = outpath.dirName;
-        auto toEpub = new ToEpub(basePath);
+        auto toEpub = new ToEpub();
         if (!toEpub.run(book, zf)) return false;
         auto outfile = File(epubOut, "w");
         outfile.rawWrite(zf.build());
         outfile.close();
         return true;
-    };
-    w["html"] = (book, outpath)
+    });
+    w["html"] = Writer("html", "html", (book, outpath)
     {
         if (outpath == "-")
         {
@@ -43,8 +47,8 @@ writer[string] writers()
             outfile.close();
         }
         return true;
-    };
-    w["markdown"] = (book, outpath)
+    });
+    w["markdown"] = Writer("markdown", "text", (book, outpath)
     {
         auto mdOut = outpath.stripExtension() ~ ".md";
         auto outfile = File(mdOut, "w");
@@ -54,8 +58,8 @@ writer[string] writers()
         outfile.flush();
         outfile.close();
         return true;
-    };
-    w["bbcode"] = (book, outpath)
+    });
+    w["bbcode"] = Writer("bbcode", "bbcode", (book, outpath)
     {
         auto mdOut = outpath.stripExtension() ~ ".bbcode";
         auto outfile = File(mdOut, "w");
@@ -65,8 +69,8 @@ writer[string] writers()
         outfile.flush();
         outfile.close();
         return true;
-    };
-    w["text"] = (book, outpath)
+    });
+    w["text"] = Writer("text", "text", (book, outpath)
     {
         if (outpath == "-")
         {
@@ -85,12 +89,12 @@ writer[string] writers()
             outfile.close();
         }
         return true;
-    };
-    w["chapters"] = (book, outpath)
+    });
+    w["chapters"] = Writer("chapters", "html", (book, outpath)
     {
         auto outdir = outpath.stripExtension;
         new ToChapters(book, outdir).toChapters();
         return true;
-    };
+    });
     return w;
 }

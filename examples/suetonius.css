@@ -1,0 +1,7 @@
+em {
+    text-decoration: underline;
+    color: red;
+}
+p {
+    border: 4px solid green;
+}

@@ -5,6 +5,520 @@ import subtex.books;
 import std.algorithm;
 import std.array;
 import std.string;
+import std.stdio;
+import std.path : absolutePath, baseName;
+
+enum Kind
+{
+    text,
+    command,
+    start,
+    end,
+    arg,
+    paragraph,
+}
+
+struct Token
+{
+    Kind kind;
+    string content;
+    string filename;
+    size_t position;
+}
+
+struct Lexer
+{
+    import std.typecons : Tuple, tuple;
+    private string data, originalData, filename;
+
+    this(string filename, string data)
+    {
+        this.filename = filename;
+        this.data = data;
+        this.originalData = data;
+        this.popFront;
+    }
+
+    private size_t pos()
+    {
+        return originalData.length - data.length;
+    }
+
+    Token front;
+    size_t previousPosition;
+
+    Tuple!(size_t, size_t) toLineCol(size_t position)
+    {
+        auto prefix = originalData[0 .. position];
+        size_t line = prefix.count!(x => x == '\n') + 1;
+        size_t col = prefix.length - prefix.lastIndexOf('\n');
+        return tuple(line, col);
+    }
+
+    bool empty()
+    {
+        return data.length == 0;
+    }
+
+    void popFront()
+    {
+        do
+        {
+            _popFront;
+        } while (!empty && front.kind == Kind.text && front.content.strip == "");
+    }
+
+    void _popFront()
+    {
+        previousPosition = front.position;
+        auto n = data.indexOfAny("<%\\{}|");
+        if (n < 0)
+        {
+            front = Token(Kind.text, data, filename, pos);
+            data = "";
+            return;
+        }
+
+        if (n > 0)
+        {
+            auto p = data[0..n].indexOf("\n\n");
+            if (p == 0)
+            {
+                front = Token(Kind.paragraph, data[0..2], filename, pos);
+                data = data[2..$];
+                return;
+            }
+            if (p > 0) n = p;
+            front = Token(Kind.text, data[0..n], filename, pos);
+            data = data[n..$];
+            return;
+        }
+
+        switch (data[0])
+        {
+            case '%':
+                auto end = data.indexOf('\n');
+                if (end < 0) end = data.length;
+                front = Token(Kind.text, "", filename, pos);
+                data = data[end..$];
+                return;
+            case '<':
+                if (data.length >= 2 && data[1] == '%')
+                {
+                    data = data[2..$];
+                    auto end = data.indexOf("%>");
+                    if (end < 0)
+                    {
+                        throw new ParseException("unterminated comment");
+                    }
+                    front = Token(Kind.text, "", filename, pos);
+                    data = data[end + 2 .. $];
+                    return;
+                }
+                return;
+            case '\\':
+                if (data.length == 1)
+                {
+                    throw new ParseException("trailing backslash");
+                }
+
+                data = data[1..$];
+                auto start = pos;
+
+                if (!isIdentChar(data[0]))
+                {
+                    // Escape time
+                    front = Token(Kind.text, data[1..2], filename, pos);
+                    return;
+                }
+
+                do
+                {
+                    data = data[1..$];
+                } while (data.length && isIdentChar(data[0]));
+
+                front = Token(Kind.command, originalData[start..pos], filename, start - 1);
+
+                return;
+            case '{':
+                front = Token(Kind.start, "{", filename, pos);
+                data = data[1..$];
+                return;
+            case '}':
+                front = Token(Kind.end, "}", filename, pos);
+                data = data[1..$];
+                return;
+            case '|':
+                front = Token(Kind.arg, "|", filename, pos);
+                data = data[1..$];
+                return;
+            default:
+        }
+    }
+}
+
+class Parser
+{
+    private:
+    Lexer lexer;
+    string baseDir;
+    Book book;
+
+    public this(Lexer lexer)
+    {
+        this.lexer = lexer;
+        this.baseDir = baseName(absolutePath(lexer.filename));
+    }
+
+    public Chapter[] parseChapters()
+    {
+        Chapter[] chapters;
+        Chapter current;
+        while (!lexer.empty)
+        {
+            auto n = parseOne;
+            if (auto imp = cast(Import)n)
+            {
+                static import std.file;
+                auto subparser = new Parser(Lexer(imp.path, std.file.readText(imp.path)));
+                subparser.book = book;
+                book.files ~= imp.path;
+                chapters ~= subparser.parseChapters;
+                continue;
+            }
+            if (auto chap = cast(Chapter)n)
+            {
+                current = chap;
+                chapters ~= chap;
+                continue;
+            }
+            if (auto m = cast(Macro)n)
+            {
+                m.error("macros and definitions must appear in the preamble of the main file");
+                continue;
+            }
+            if (!current)
+            {
+                if (cast(ParagraphSeparator)n)
+                {
+                    // You might have several blank lines before the first chapter.
+                    continue;
+                }
+                n.error("expected chapter");
+                continue;
+            }
+
+            // If it's not any of those special cases, and it's not a chapter, it's got to be part
+            // of the current chapter.
+            current.kids ~= n;
+        }
+        return chapters;
+    }
+
+    public Book parseBook()
+    {
+        book = new Book;
+        book.mainFile = lexer.filename.absolutePath;
+        while (!lexer.empty)
+        {
+            if (!tryParseHeaderBit)
+            {
+                break;
+            }
+        }
+        book.chapters = parseChapters;
+        int chapterNum = 1;
+        foreach (c; book.chapters)
+        {
+            if (!c.silent)
+            {
+                c.chapterNum = chapterNum;
+                chapterNum++;
+            }
+        }
+        // expand only the output-agnostic macros
+        expandMacros(book, null);
+        return book;
+    }
+
+    private:
+
+    bool tryParseHeaderBit()
+    {
+        while (!lexer.empty && lexer.front.kind == Kind.paragraph) lexer.popFront;
+        if (lexer.empty) return false;
+
+        auto tok = lexer.front;
+        if (tok.kind != Kind.command) return false;
+        switch (tok.content)
+        {
+            case "import":
+            case "chapter":
+            case "chapter*":
+                return false;
+            case "info":
+            case "def":
+            case "defhtml":
+            case "defbb":
+            case "macro":
+            case "macrohtml":
+            case "macrobb":
+                lexer.popFront;
+                parseCommand(tok);
+                return true;
+            default:
+                error("expected preamble element or chapter");
+                return false;
+        }
+    }
+
+    private void parseBody(Node parent)
+    {
+        while (!lexer.empty && lexer.front.kind != Kind.end)
+        {
+            auto kid = parseOne;
+            kid.parent = parent;
+            parent.kids ~= kid;
+        }
+    }
+
+    Node parseOne()
+    {
+        if (lexer.empty) return new Empty;
+        auto tok = lexer.front;
+        lexer.popFront;
+        final switch (tok.kind) with (Kind)
+        {
+            case Kind.command:
+                return parseCommand(tok);
+            case Kind.arg:
+                return new ArgSeparator(tok.position);
+            case Kind.end:
+                return error("unexpected '}'");
+            case Kind.start:
+                return error("unexpected '}'");
+            case Kind.text:
+                return new Node(tok.content, tok.position);
+            case Kind.paragraph:
+                return new ParagraphSeparator(tok.position);
+        }
+    }
+
+    Node parseBuiltin(string name, string content, size_t start)
+    {
+        import std.conv : to;
+        import std.path : absolutePath;
+        switch (name)
+        {
+            case "content":
+                return new Content(content.to!size_t, start);
+            case "import":
+                return new Import(absolutePath(content, lexer.filename), start);
+            case "chapter":
+                return new Chapter(false, content, start);
+            case "chapter*":
+                return new Chapter(true, content, start);
+            case "img":
+                return new Image(absolutePath(content, baseDir), start);
+            case "info":
+                auto c = content.indexOf(',');
+                book.info[content[0..c].strip] ~= content[c+1 .. $].strip;
+                break;
+            default:
+                break;
+        }
+        return new Empty();
+    }
+
+    Node parseCommand(Token tok)
+    {
+        switch (tok.content)
+        {
+            case "content":
+            case "import":
+            case "info":
+            case "chapter":
+            case "chapter*":
+            case "img":
+            case "author":
+            case "title":
+            case "stylesheet":
+                // These are all things that expect a text block instead of a node tree.
+                string data;
+                if (!lexer.empty && lexer.front.kind == Kind.start)
+                {
+                    // Performance: if there's only one token and it's a text token, just use that.
+                    lexer.popFront;
+                    Appender!string allContent;
+                    if (lexer.empty)
+                    {
+                        error("expected argument or '}'");
+                    }
+                    while (lexer.front.kind == Kind.text)
+                    {
+                        allContent ~= lexer.front.content;
+                        lexer.popFront;
+                    }
+                    if (lexer.empty || lexer.front.kind != Kind.end)
+                    {
+                        error("expected '}'");
+                    }
+                    lexer.popFront;
+                    data = allContent.data.strip;
+                }
+                return parseBuiltin(tok.content, data, tok.position);
+            case "def":
+            case "defhtml":
+            case "defbb":
+            case "macro":
+            case "macrohtml":
+            case "macrobb":
+                // parsed *almost* as a normal node
+                if (lexer.empty || lexer.front.kind != Kind.start)
+                {
+                    error("expected definition");
+                }
+                auto start = lexer.front.position;
+                auto t = lexer.front.content;
+                auto comma = t.indexOf(',');
+                string name;
+                Node rest;
+                if (comma >= 0)
+                {
+                    name = t[0..comma].strip;
+                }
+                else
+                {
+                    name = t.strip;
+                    lexer.popFront;
+                    t = lexer.front.content;
+                    comma = t.indexOf(',');
+                    if (comma < 0)
+                    {
+                        error("expected ','");
+                    }
+                }
+                // In the rare case that you have a definition like:
+                // \macro{a<%stuff%>,<%comment%>\content}
+                // this will do an extra allocation. I can live with it.
+                rest = new Node(t[name.length + 1 .. $], start + comma + 1);
+                lexer.popFront;
+                auto m = new Macro(name, tok.position);
+                parseBody(m);
+                m.kids = rest ~ m.kids;
+                book.defs[DefIdent(m.text, m.kind)] = m;
+                break;
+            default:
+
+        }
+        auto curr = new Cmd(tok.content, tok.position);
+        if (!lexer.empty && lexer.front.kind == Kind.start)
+        {
+            lexer.popFront;
+            parseBody(curr);
+            if (lexer.empty)
+            {
+                error("expected '}', got end of file");
+            }
+            if (lexer.front.kind != Kind.end)
+            {
+                error("missing '}'");
+            }
+            lexer.popFront;
+        }
+        return curr;
+    }
+
+    Node error(string message)
+    {
+        // TODO Rationalize usage for prev vs current
+        auto pos = lexer.toLineCol(lexer.previousPosition);
+        throw new ParseException("%s(%s:%s): %s".format(lexer.filename, pos[0], pos[1], message));
+    }
+}
+
+void expandMacros(Book book, string kind)
+{
+    foreach (chapter; book.chapters)
+    {
+        Node n = chapter;
+        expandMacros(n, book, kind);
+    }
+}
+void expandMacros(ref Node node, Book book, string kind)
+{
+    if (auto c = cast(Cmd)node)
+    {
+        if (auto p = DefIdent(c.text, kind) in book.defs)
+        {
+            node = Expander(c, *p).expand;
+        }
+    }
+    foreach (ref kid; node.kids) expandMacros(kid, book, kind);
+}
+
+struct Expander
+{
+    Cmd c;
+    Macro m;
+    Arg kids;
+    Arg[] args;
+
+    this(Cmd c, Macro m)
+    {
+        this.c = c;
+        this.m = cast(Macro)m.dup;
+        this.kids = new Arg(c.kids);
+        this.args = c.kids
+            .splitter!(x => cast(ArgSeparator)x)
+            .map!(x => new Arg(x))
+            .array;
+    }
+
+    Node expand()
+    {
+        Node root = new Cmd(c.text, c.start);
+        root.kids = m.kids;
+        _expand(root);
+        return root;
+    }
+
+    void _expand(ref Node node)
+    {
+        if (auto kc = cast(Content)node)
+        {
+            if (kc.index == Content.all)
+            {
+                node = kids;
+            }
+            else if (kc.index >= args.length)
+            {
+                node.error("expected at least %s arguments, got %s", kc.index + 1, args.length);
+            }
+            else
+            {
+                node = args[kc.index];
+            }
+        }
+        foreach (ref k; node.kids) _expand(k);
+    }
+}
+
+
+void setParents(Node node)
+{
+    foreach (kid; node.kids) kid.parent = node;
+    foreach (kid; node.kids) setParents(kid);
+}
+
+Book parseFile(string filename, FileReader reader)
+{
+    import std.path : absolutePath;
+    filename = absolutePath(filename);
+    auto lexer = Lexer(filename, reader(filename));
+    auto parser = new Parser(lexer);
+    return parser.parseBook;
+}
 
 enum infoStart = "\\info{";
 enum chapterStart = "\\chapter{";
@@ -15,437 +529,6 @@ enum defbb = "\\defbb{";
 enum defhtml = "\\defhtml{";
 
 alias FileReader = string delegate(string);
-
-class Parser
-{
-    this(string filename, string data, FileReader reader)
-    {
-        this.filename = filename;
-        this.originalData = this.data = data;
-        this.reader = reader;
-    }
-
-    Book parse()
-    {
-        this.data = this.originalData;
-        this.book = new Book();
-        auto oldLength = data.length + 1;
-        while (data.length && data.length < oldLength)
-        {
-            oldLength = data.length;
-            // We get header elements only, followed by \chapter
-            skipWhiteComment();
-            parseHeaderBit();
-            skipWhiteComment();
-            if (chapterBoundary)
-            {
-                break;
-            }
-        }
-        parseChapters(book);
-        int chapNum = 0;
-        foreach (i, chapter; book.chapters)
-        {
-            if (!chapter.silent)
-            {
-                chapNum++;
-                chapter.chapterNum = chapNum;
-            }
-            chapter.index = cast(int) i;
-        }
-        return book;
-    }
-
-private:
-    string data, originalData;
-    string filename;
-    FileReader reader;
-    Book book;
-
-    bool parseHeaderBit()
-    {
-        if (data.startsWith(infoStart))
-        {
-            readInfo();
-        }
-        else if (data.startsWith(macroStart))
-        {
-            readMacro();
-        }
-        else if (data.startsWith(defbb))
-        {
-            data = data[defbb.length .. $];
-            readDef("bbcode");
-        }
-        else if (data.startsWith(defhtml))
-        {
-            data = data[defhtml.length .. $];
-            readDef("html");
-        }
-        else
-        {
-            return false;
-        }
-        return true;
-    }
-
-    void readMacro()
-    {
-        // TODO ensure that macro names are identifiers
-        auto pos = getPosition();
-        data = data[macroStart.length..$];
-        // A macro is a name followed by a series of definitions.
-        skipWhiteComment();
-        auto k = data.indexOf(',');
-        if (k < 0)
-        {
-            error("expected: \\macro{name, expansion}");
-        }
-        auto m = new Macro(data[0..k].strip, pos);
-        data = data[k+1..$];
-        skipWhiteComment();
-        parseNodeContents(m);
-        if (data.length == 0 || data[0] != '}')
-        {
-            error("unterminated macro", pos);
-        }
-        data = data[1..$];
-        book.macros[m.text] = m;
-    }
-
-    void readDef(string type)
-    {
-        // TODO ensure that def names are identifiers
-        auto start = getPosition();
-        skipWhiteComment();
-        auto k = data.indexOf(',');
-        if (k < 0)
-        {
-            error("expected: \\def[bb|html]{name, value}");
-        }
-        auto name = data[0..k].strip;
-        data = data[k+1 .. $];
-        auto endOfDef = data.indexOf('}');
-        if (endOfDef < 0)
-        {
-            error("missing `}' in variable definition", start);
-        }
-        auto def = data[0..endOfDef].strip;
-        data = data[endOfDef+1 .. $];
-        book.defs[DefIdent(name, type)] = def;
-    }
-
-    void readInfo()
-    {
-        data = data[infoStart.length .. $];
-        auto next = data.indexOfAny("\n,");
-        if (next == -1 || data[next] == '\n')
-        {
-            error("expected: `\\info{id, value}' -- you need a comma after the id");
-        }
-        auto s = data[0 .. next].strip();
-        data = data[next + 1 .. $];
-        next = data.indexOf("}");
-        if (next < 0)
-        {
-            error("expected: `\\info{id, value}' -- you need a `}' after the value");
-        }
-        auto val = data[0 .. next].strip();
-        data = data[next + 1 .. $];
-        if (s in book.info)
-        {
-            auto v = book.info[s];
-            v ~= val;
-            book.info[s] = v;
-        }
-        else
-        {
-            book.info[s] = [val];
-        }
-    }
-
-    void parseChapters(Book book)
-    {
-        while (data.length > 0)
-        {
-            skipWhiteComment;
-            if (data.length == 0) break;
-            bool silent = false;
-            if (data.startsWith(chapterStart))
-            {
-                data = data[chapterStart.length .. $];
-            }
-            else if (data.startsWith(silentChapterStart))
-            {
-                silent = true;
-                data = data[silentChapterStart.length .. $];
-            }
-            else if (data.startsWith(importStatement))
-            {
-                data = data[importStatement.length .. $];
-                auto end = data.indexOf('}');
-                if (end < 0)
-                {
-                    error("expected '}' after import statement");
-                }
-                auto childFilename = data[0..end];
-                data = data[end + 1 .. $];
-                auto childParser = new Parser(childFilename, reader(childFilename), reader);
-                childParser.book = book;
-                childParser.parseChapters(book);
-                continue;
-            }
-            else
-            {
-                error("expected chapter");
-            }
-            auto chapter = new Chapter(silent, getPosition);
-            book.chapters ~= chapter;
-            auto end = data.indexOf("}");
-            if (end == -1)
-            {
-                error("expected `}' after chapter title", chapter.start);
-            }
-            chapter.title = data[0 .. end];
-            data = data[end + 1 .. $];
-            parseNodeContents(chapter);
-        }
-    }
-
-    bool chapterBoundary()
-    {
-        return data.startsWith(chapterStart)
-            || data.startsWith(silentChapterStart)
-            || data.startsWith(importStatement);
-    }
-
-    void parseNodeContents(Node parent)
-    {
-        while (data.length > 0)
-        {
-            if (chapterBoundary)
-            {
-                return;
-            }
-            if (data[0] == '}')
-            {
-                return;
-            }
-            auto i = data.indexOfAny("%\\}<");
-            if (i == -1)
-            {
-                // We don't have any more special characters for the rest of time.
-                // Done!
-                parent.kids ~= new Node(data, getPosition());
-                data = "";
-                break;
-            }
-            if (i > 0)
-            {
-                // We have some text before the next thing. Cool!
-                parent.kids ~= new Node(data[0 .. i], getPosition());
-                data = data[i .. $];
-                continue;
-            }
-            if (data.startsWith("\\%"))
-            {
-                // You have \% -- escaped percent sign.
-                // Take it for real text.
-                parent.kids ~= new Node("%", getPosition());
-                data = data[2 .. $];
-                continue;
-            }
-            if (data.startsWith("\\\\"))
-            {
-                // You have \% -- escaped backslash.
-                // Take it for real text.
-                parent.kids ~= new Node("\\", getPosition());
-                data = data[2 .. $];
-                continue;
-            }
-            if (data.startsWith("%"))
-            {
-                auto j = data.indexOf("\n");
-                if (j < 0)
-                {
-                    break;
-                }
-                data = data[j + 1 .. $];
-                continue;
-            }
-            if (data.startsWith("<%"))
-            {
-                data = data[2..$];
-                auto j = data.indexOf("%>");
-                if (j < 0)
-                {
-                    error("Unterminated block comment. Terminate with %>.");
-                    data = "";
-                    continue;
-                }
-                data = data[j+2 .. $];
-            }
-            if (data.startsWith("\\"))
-            {
-                data = data[1 .. $];
-                size_t k = 0;
-                while (k < data.length && isIdentChar(data[k]))
-                    k++;
-                if (k == 0)
-                {
-                    error(
-                            "Found single backslash '\\'. "
-                            ~ "If you meant to include a literal backslash, type it twice.");
-                    continue;
-                }
-                auto cmd = new Cmd(data[0 .. k], getPosition());
-                data = data[k .. $];
-                if (data.length && data[0] == '{')
-                {
-                    data = data[1 .. $];
-                    parseNodeContents(cmd);
-                    if (data.length && data[0] == '}')
-                    {
-                        data = data[1 .. $];
-                    }
-                    else
-                    {
-                        error("unterminated command", cmd.start);
-                    }
-                    if (cmd.text == "img")
-                    {
-                        if (cmd.kids.length == 0
-                                || cmd.kids.any!(x => !!cast(Cmd) x)
-                                || cmd.kids.any!(x => x.text.length == 0))
-                        {
-                            error(`\img command requires one argument; eg '\img{foo.png}' or `
-                                    ~ `'\img{https://example.org/}'. If you are on Windows and are specifying `
-                                    ~ `a path, use double backslashes: \img{C:\\Documents\\Pictures\\foo.png}.`);
-
-                        }
-                        if (cmd.kids.length > 1)
-                        {
-                            // Escape sequence. Join.
-                            cmd.uri = cmd.kids.map!(x => x.text).join("");
-                        }
-                    }
-                    else if (auto p = cmd.text in book.macros)
-                    {
-                        // Nodes are directly duplicated.
-                        // However, we want to distinguish the template as a whole from its content.
-                        // So we change its name temporarily and march on.
-                        auto t = cmd.text;
-                        cmd.text = "content";
-                        scope (exit) cmd.text = t;
-                        cmd = cast(Cmd)expandMacro(*p, cmd);
-                    }
-                }
-                parent.kids ~= cmd;
-            }
-        }
-    }
-
-    Node expandMacro(Node m, Node orig)
-    {
-        Node n;
-        if (cast(Macro)m)
-        {
-            n = new Cmd(m.text, m.start);
-        }
-        else
-        {
-            n = m.dup;
-            if (cast(Cmd)n)
-            {
-                n.kids = null;
-            }
-        }
-        foreach (c; m.kids)
-        {
-            if (c.text == "content")
-            {
-                n.kids ~= orig;
-            }
-            else
-            {
-                n.kids ~= expandMacro(c, orig);
-            }
-        }
-        return n;
-    }
-
-    void error(string message)
-    {
-        error(message, getPosition());
-    }
-
-    void error(string message, size_t position)
-    {
-        auto prefix = originalData[0 .. position];
-        auto line = prefix.count!(x => x == '\n') + 1;
-        auto col = prefix.length - prefix.lastIndexOf('\n');
-        throw new ParseException("%s(%s:%s): %s".format(filename, line, col, message));
-    }
-
-    void skipWhitespace()
-    {
-        data = data.stripLeft;
-    }
-
-    void skipWhiteComment()
-    {
-        while (data.length)
-        {
-            auto len = data.length;
-            data = data.stripLeft;
-            if (data.startsWith("<%"))
-            {
-                auto end = data.indexOf("%>");
-                if (end < 0)
-                {
-                    data = "";
-                }
-                else
-                {
-                    data = data[end + 2 .. $];
-                }
-            }
-            if (data.startsWith('%'))
-            {
-                auto end = data.indexOf('\n');
-                if (end < 0)
-                {
-                    data = "";
-                }
-                else
-                {
-                    data = data[end + 1 .. $];
-                }
-            }
-            if (len == data.length) break;
-        }
-    }
-
-    size_t getPosition()
-    {
-        return originalData.length - data.length;
-    }
-
-    bool isIdentChar(char c)
-    {
-        import std.uni;
-
-        return c == '_' || isAlpha(c) || isNumber(c);
-    }
-}
-
-class ParseException : Exception
-{
-    this(string msg)
-    {
-        super(msg);
-    }
-}
 
 unittest
 {

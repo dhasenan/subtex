@@ -31,7 +31,7 @@ void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets
         {
             sink.put(`<link rel="stylesheet" href="`);
             sink.put(stylesheet);
-            sink.put(`" type="text/html"/>
+            sink.put(`" type="text/css"/>
                     `);
         }
     }
@@ -160,12 +160,6 @@ struct NodeHtml(OutRange)
 
     void inTags(Node node, string tag, string clazz)
     {
-        auto key = DefIdent(node.text, "html");
-        if (auto p = key in book.defs)
-        {
-            sink.inline(*p);
-            return;
-        }
         auto t = Tag(tag, clazz);
         auto currStack = tagStack;
         tagStack ~= t;
@@ -446,13 +440,10 @@ class ToEpub
     import std.zip;
 
     string basePath;
-    this(string basePath)
-    {
-        this.basePath = basePath;
-    }
 
     bool run(Book book, ZipArchive zf)
     {
+        this.basePath = book.mainFile.dirName;
         bool success = true;
         auto b = new epub.Book;
         epub.Chapter titlepage = {
@@ -464,7 +455,7 @@ title:
             // TODO find referenced images
             Appender!string sink;
             sink.reserve(cast(size_t)(chapter.length * 1.2));
-            book.htmlPrelude(sink, false, delegate void(ref Appender!string s) {
+            book.htmlPrelude(sink, true, delegate void(ref Appender!string s) {
                     s ~= `<h2 class="chapter">`;
                     s ~= chapter.fullTitle;
                     s ~= `</h2>`;
@@ -906,11 +897,6 @@ class ToBbcode(OutRange)
                     return;
                 default:
                     auto key = DefIdent(cmd.text, "bbcode");
-                    if (auto p = key in book.defs)
-                    {
-                        sink.put(*p);
-                        return;
-                    }
                     foreach (kid; node.kids)
                     {
                         writeNode(kid);

@@ -4,6 +4,7 @@ import subtex.books;
 import subtex.formats;
 import subtex.output;
 import subtex.parser;
+import subtex.util;
 
 import core.memory;
 
@@ -79,7 +80,7 @@ int main(string[] args)
     {
         foreach (arg; args[1..$])
         {
-            auto lexer = Lexer(arg, std.file.readText(arg));
+            auto lexer = Lexer(arg.absolutePath);
             long tokcount = 0;
             while (!lexer.empty)
             {
@@ -113,7 +114,7 @@ int main(string[] args)
             {
                 return buildPath(basePath, filename).readText;
             }
-            auto lexer = Lexer(infile, infile.readText);
+            auto lexer = Lexer(infile.absolutePath);
             auto parser = new Parser(lexer);
             Book book;
             try

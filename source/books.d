@@ -1,28 +1,13 @@
 module subtex.books;
 
+import std.algorithm;
+import std.array;
 import std.conv;
 import std.typecons;
 import std.uuid;
-
-struct Loc
-{
-    string filename;
-    size_t line, col;
-
-    string toString() const
-    {
-        import std.format;
-        return format("%s(%s:%s)", filename, line, col);
-    }
-}
-
-bool isIdentChar(dchar c)
-{
-    import std.uni;
-
-    return c == '_' || c == '*' || isAlpha(c) || isNumber(c);
-}
-
+import std.string;
+import std.format;
+import subtex.util;
 
 class Book
 {
@@ -83,90 +68,22 @@ struct DefIdent
     string type;
 }
 
-class Context
-{
-    string filename;
-    Context parent;
-    string[string] info;
-    string[] stylesheets;
-
-    this(string filename, string filetext)
-    {
-        this.filename = filename;
-        this.filetext = filetext;
-    }
-
-    private string filetext;
-    private Macro[DefIdent] macros;
-
-    Loc loc(size_t offset)
-    {
-        import std.algorithm : count;
-        import std.string : lastIndexOf;
-        auto prefix = filetext[0 .. offset];
-        size_t line = prefix.count!(x => x == '\n') + 1;
-        size_t col = prefix.length - prefix.lastIndexOf('\n');
-        return Loc(filename, line, col);
-    }
-
-    void define(Macro m)
-    {
-        auto ident = DefIdent(m.text, m.kind);
-        if (auto p = ident in macros)
-        {
-            auto dup = *p;
-            auto loc = dup.context.loc(dup.start);
-            m.error("duplicate definition of macro '%s' -- previous definition %s", m.text, loc);
-            return;
-        }
-        macros[ident] = m;
-    }
-
-    Macro findMacro(Cmd cmd, string outputType)
-    {
-        if (auto p = DefIdent(cmd.text, outputType) in macros)
-        {
-            return (*p);
-        }
-        if (parent)
-        {
-            return parent.findMacro(cmd, outputType);
-        }
-        return null;
-    }
-
-    Import[] imports;
-    bool[string] importedFiles;
-
-    void addImport(Import im)
-    {
-        imports ~= im;
-        importedFiles[im.path] = true;
-    }
-
-    void addInfo(string name, string value)
-    {
-        import std.string : strip;
-        info[name.strip] = value.strip;
-    }
-}
-
 // A standard node is either a plain string, or a command, or a series of nodes.
 // Only one at a time.
 class Node
 {
-    this(string text, size_t start)
+    this(string text, Position position)
     {
         this.text = text;
-        this.start = start;
+        this.position = position;
     }
 
     string text; // for commands: the name of the command; else text contents
     string uri; // for URI-oriented commands (img)
-    Context context;
     Node parent;
     Node[] kids;
-    size_t start;
+    Position position;
+    protected size_t start() { return position.offset; }
 
     // Approximate end of this node.
     size_t end()
@@ -185,51 +102,69 @@ class Node
 
     Node dup()
     {
-        auto n = new Node(text, start);
-        n.kids = kids.dup;
-        n.uri = uri;
+        auto n = new Node(text, position);
+        _dupeTo(n);
         return n;
+    }
+
+    protected void _dupeTo(Node n)
+    {
+        n.tupleof = this.tupleof;
+        n.kids = kids.map!(x => x.dup).array;
+        foreach (kid; n.kids) kid.parent = n;
+        import std.stdio;
     }
 
     void error(T...)(string msg, T args)
     {
-        import std.format : format;
-        msg = format(msg, args);
-        auto loc = context.loc(start);
-        throw new ParseException("%s: %s".format(loc, msg));
+        import std.file : readText;
+        throw new ParseException(position, format(msg, args));
     }
+
+    protected this() {}
 }
+
+enum Dup = `
+    protected this() {}
+
+    override typeof(this) dup()
+    {
+        auto d = new typeof(this);
+        _dupeTo(d);
+        return d;
+    }
+    protected override void _dupeTo(Node n)
+    {
+        (cast(typeof(this))n).tupleof = this.tupleof;
+        super._dupeTo(n);
+    }
+`;
 
 class Cmd : Node
 {
-    this(string text, size_t start)
+    this(string text, Position position)
     {
-        super(text, start);
+        super(text, position);
     }
 
-    override Node dup()
-    {
-        auto n = new Cmd(text, start);
-        n.kids = kids.dup;
-        n.uri = uri;
-        return n;
-    }
+    mixin(Dup);
 }
 
 class Chapter : Node
 {
-    this(bool silent, size_t start)
+    this(bool silent, Position position)
     {
-        super("", start);
+        super("", position);
         this.silent = silent;
     }
 
-    this(bool silent, string title, size_t start)
+    this(bool silent, string title, Position position)
     {
-        super(title, start);
+        // Chapters are special and all.
+        super("", position);
         this.title = title;
         this.silent = silent;
-        this.kids ~= new Node(title, start);
+        this.kids ~= new Node(title, position);
     }
 
     string title;
@@ -264,24 +199,14 @@ class Chapter : Node
     {
         return title.sha1UUID().to!string;
     }
-
-    override Node dup()
-    {
-        auto n = new Chapter(silent, start);
-        n.kids = kids.dup;
-        n.uri = uri;
-        n.index = index;
-        n.chapterNum = chapterNum;
-        n.context = context;
-        return n;
-    }
+    mixin(Dup);
 }
 
 class Macro : Node
 {
-    this(string name, size_t start)
+    this(string name, Position position)
     {
-        super(name, start);
+        super(name, position);
     }
 
     string kind;
@@ -290,7 +215,7 @@ class Macro : Node
     {
         import std.string : strip;
         auto kn = kindAndName(c);
-        super(kn[1].strip, c.start);
+        super(kn[1].strip, c.position);
 
         this.kind = kn[0];
         auto firstText = c.kids[0].dup;
@@ -321,94 +246,64 @@ class Macro : Node
         return tuple(kind, p.front);
     }
 
-    override Node dup()
-    {
-        auto n = new Macro(text, start);
-        n.kids = kids.dup;
-        n.context = context;
-        n.kind = kind;
-        return n;
-    }
+    mixin(Dup);
 }
 
 class ArgSeparator : Node
 {
-    this(size_t start)
+    this(Position position)
     {
-        super("|", start);
+        super("|", position);
     }
 
-    override Node dup()
-    {
-        auto n = new ArgSeparator(start);
-        n.context = context;
-        return n;
-    }
+    mixin(Dup);
 }
 
 class Arg : Node
 {
     this(Node[] nodes)
     {
-        super("", nodes ? nodes[0].start : 0);
+        super("", nodes ? nodes[0].position : Position.init);
         this.kids = nodes;
     }
-}
-
-class Empty : Node
-{
-    this()
-    {
-        super("", 0);
-    }
+    mixin(Dup);
 }
 
 class ParagraphSeparator : Node
 {
-    this(size_t start)
+    this(Position position)
     {
-        super("\n\n", start);
+        super("\n\n", position);
     }
 
-    this(string name, size_t start)
+    this(string name, Position position)
     {
-        super(name, start);
+        super(name, position);
     }
 
-    override Node dup()
-    {
-        auto n = new ParagraphSeparator(text, start);
-        n.context = context;
-        return n;
-    }
+    mixin(Dup);
 }
 
 class Content : Node
 {
     static immutable size_t all = cast(size_t)-1;
 
-    this(size_t index, size_t start)
+    this(size_t index, Position position)
     {
-        super("content", start);
+        super("content", position);
         this.index = index;
     }
 
     size_t index;
-}
 
-class ParseException : Exception
-{
-    this(string msg)
-    {
-        super(msg);
-    }
+    mixin(Dup);
 }
 
 class Import : Node
 {
-    this(string path, size_t start)
+    this(string path, Position position)
     {
-        super("import", start);
+        super("import", position);
         this.path = path;
     }
 
@@ -417,11 +312,13 @@ class Import : Node
 
 class Image : Node
 {
-    this(string path, size_t start)
+    this(string path, Position position)
     {
-        super("img", start);
+        super("img", position);
         this.path = path;
     }
 
     string path;
+
+    mixin(Dup);
 }

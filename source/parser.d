@@ -1,12 +1,13 @@
 module subtex.parser;
 
 import subtex.books;
+import subtex.util;
 
 import std.algorithm;
 import std.array;
 import std.string;
 import std.stdio;
-import std.path : absolutePath, baseName;
+import std.path : absolutePath, dirName;
 
 enum Kind
 {
@@ -22,30 +23,31 @@ struct Token
 {
     Kind kind;
     string content;
-    string filename;
-    size_t position;
+    Position position;
 }
 
 struct Lexer
 {
     import std.typecons : Tuple, tuple;
     private string data, originalData, filename;
+    private ushort fileId;
 
-    this(string filename, string data)
+    this(string filename)
     {
-        this.filename = filename;
-        this.data = data;
-        this.originalData = data;
-        this.popFront;
+        this.filename = filename.absolutePath;
+        data = Files.read(filename);
+        fileId = Files.id(filename);
+        originalData = data;
+        popFront;
     }
 
-    private size_t pos()
+    private Position position()
     {
-        return originalData.length - data.length;
+        return Position(fileId, cast(uint)(originalData.length - data.length));
     }
 
     Token front;
-    size_t previousPosition;
+    Position previousPosition;
 
     Tuple!(size_t, size_t) toLineCol(size_t position)
     {
@@ -70,90 +72,124 @@ struct Lexer
 
     void _popFront()
     {
-        previousPosition = front.position;
-        auto n = data.indexOfAny("<%\\{}|");
-        if (n < 0)
+front:
+        if (data.length == 0)
         {
-            front = Token(Kind.text, data, filename, pos);
-            data = "";
             return;
         }
+        previousPosition = front.position;
 
-        if (n > 0)
+        if (data[0] == '\\')
         {
-            auto p = data[0..n].indexOf("\n\n");
-            if (p == 0)
+            if (data.length == 1)
             {
-                front = Token(Kind.paragraph, data[0..2], filename, pos);
-                data = data[2..$];
+                throw new ParseException(position, "unexpected '\\' at end of file");
+            }
+
+            data = data[1..$];
+            if (isIdentChar(data[0]))
+            {
+                // command
+                string ident = data;
+                foreach (i, char c; data)
+                {
+                    if (!isIdentChar(c))
+                    {
+                        ident = data[0..i];
+                        break;
+                    }
+                }
+                front = Token(Kind.command, ident, position);
+                data = data[ident.length..$];
                 return;
             }
-            if (p > 0) n = p;
-            front = Token(Kind.text, data[0..n], filename, pos);
-            data = data[n..$];
+
+            // escape; treat it as the start of text
+            // first, can't escape newline
+            if (data[0] == '\n')
+            {
+                throw new ParseException(position, ": '\\' encountered at end of line");
+            }
+            goto readTextToken;
+        }
+
+        if (data.length > 1 && data.startsWith("<%"))
+        {
+            data = data[2..$];
+            auto end = data.indexOf("%>");
+            if (end < 0)
+            {
+                throw new ParseException(position, "unterminated comment");
+            }
+            data = data[data.indexOf("%>") + 2 .. $];
+            goto front;
+        }
+
+        if (data[0] == '%')
+        {
+            auto end = data.indexOf('\n');
+            if (end < 0) end = data.length;
+            data = data[end..$];
+            goto front;
+        }
+
+        if (data[0] == '{')
+        {
+            front = Token(Kind.start, "{", position);
+            data = data[1..$];
             return;
         }
 
-        switch (data[0])
+        if (data[0] == '}')
         {
-            case '%':
-                auto end = data.indexOf('\n');
-                if (end < 0) end = data.length;
-                front = Token(Kind.text, "", filename, pos);
-                data = data[end..$];
-                return;
-            case '<':
-                if (data.length >= 2 && data[1] == '%')
-                {
-                    data = data[2..$];
-                    auto end = data.indexOf("%>");
-                    if (end < 0)
-                    {
-                        throw new ParseException("unterminated comment");
-                    }
-                    front = Token(Kind.text, "", filename, pos);
-                    data = data[end + 2 .. $];
-                    return;
-                }
-                return;
-            case '\\':
-                if (data.length == 1)
-                {
-                    throw new ParseException("trailing backslash");
-                }
-
-                data = data[1..$];
-                auto start = pos;
-
-                if (!isIdentChar(data[0]))
-                {
-                    // Escape time
-                    front = Token(Kind.text, data[1..2], filename, pos);
-                    return;
-                }
-
-                do
-                {
-                    data = data[1..$];
-                } while (data.length && isIdentChar(data[0]));
-
-                front = Token(Kind.command, originalData[start..pos], filename, start - 1);
-
-                return;
-            case '{':
-                front = Token(Kind.start, "{", filename, pos);
-                data = data[1..$];
-                return;
-            case '}':
-                front = Token(Kind.end, "}", filename, pos);
-                data = data[1..$];
-                return;
-            case '|':
-                front = Token(Kind.arg, "|", filename, pos);
-                data = data[1..$];
-                return;
-            default:
+            front = Token(Kind.end, "}", position);
+            data = data[1..$];
+            return;
         }
+
+        if (data[0] == '|')
+        {
+            front = Token(Kind.arg, "|", position);
+            data = data[1..$];
+            return;
+        }
+
+        if (data.startsWith("\n\n"))
+        {
+            front = Token(Kind.paragraph, "\n\n", position);
+            data = data[2..$];
+            return;
+        }
+
+readTextToken:
+        auto start = position;
+        data = data[1..$]; // we know we're taking at least one character
+        size_t end = 0;
+        foreach (i, c; data)
+        {
+            end = i;
+            switch (c)
+            {
+                case '\n':
+                    if (data[i..$].startsWith("\n\n")) goto foundEnd;
+                    break;
+                case '<':
+                    if (data[i..$].startsWith("<%")) goto foundEnd;
+                    break;
+                case '%':
+                case '\\':
+                case '{':
+                case '}':
+                case '|':
+                    goto foundEnd;
+                default:
+                    break;
+            }
+        }
+
+foundEnd:
+        data = data[end..$];
+        front = Token(Kind.text, originalData[start.offset..position.offset], position);
     }
 }
 
@@ -167,7 +203,7 @@ class Parser
     public this(Lexer lexer)
     {
         this.lexer = lexer;
-        this.baseDir = baseName(absolutePath(lexer.filename));
+        this.baseDir = dirName(absolutePath(lexer.filename));
     }
 
     public Chapter[] parseChapters()
@@ -180,7 +216,7 @@ class Parser
             if (auto imp = cast(Import)n)
             {
                 static import std.file;
-                auto subparser = new Parser(Lexer(imp.path, std.file.readText(imp.path)));
+                auto subparser = new Parser(Lexer(imp.path));
                 subparser.book = book;
                 book.files ~= imp.path;
                 chapters ~= subparser.parseChapters;
@@ -284,7 +320,8 @@ class Parser
 
     Node parseOne()
     {
-        if (lexer.empty) return new Empty;
+        if (lexer.empty)
+            return new Node("", Position(lexer.fileId, cast(uint)lexer.originalData.length));
         auto tok = lexer.front;
         lexer.popFront;
         final switch (tok.kind) with (Kind)
@@ -304,16 +341,17 @@ class Parser
         }
     }
 
-    Node parseBuiltin(string name, string content, size_t start)
+    Node parseBuiltin(string name, string content, Position start)
     {
         import std.conv : to;
         import std.path : absolutePath;
         switch (name)
         {
             case "content":
-                return new Content(content ? content.to!size_t : Content.all, start);
+                auto index = content ? content.to!size_t : Content.all;
+                return new Content(index, start);
             case "import":
-                return new Import(absolutePath(content, lexer.filename), start);
+                return new Import(absolutePath(content, baseDir), start);
             case "chapter":
                 return new Chapter(false, content, start);
             case "chapter*":
@@ -327,7 +365,7 @@ class Parser
             default:
                 break;
         }
-        return new Empty();
+        return new Node("", start);
     }
 
     Node parseCommand(Token tok)
@@ -381,7 +419,6 @@ class Parser
                 lexer.popFront;
                 auto start = lexer.front.position;
                 auto t = lexer.front.content;
-                writefln("defining with first segment %s", t);
                 auto comma = t.indexOf(',');
                 string name;
                 Node rest;
@@ -403,7 +440,8 @@ class Parser
                 // In the rare case that you have a definition like:
                 // \macro{a<%stuff%>,<%comment%>\content}
                 // this will do an extra allocation. I can live with it.
-                rest = new Node(t[name.length + 1 .. $].stripLeft, start + comma + 1);
+                t = t[comma+1 .. $].stripLeft;
+                rest = new Node(t, Position(start.fileId, cast(uint)(start.offset + comma + 1)));
                 lexer.popFront;
                 auto m = new Macro(name, tok.position);
                 parseBody(m);
@@ -415,7 +453,6 @@ class Parser
                 m.kids = rest ~ m.kids;
                 auto ident = DefIdent(m.text, m.kind);
                 book.defs[ident] = m;
-                writefln("definition: %s => %s", ident, m);
                 break;
             default:
 
@@ -441,8 +478,7 @@ class Parser
     Node error(string message)
     {
         // TODO Rationalize usage for prev vs current
-        auto pos = lexer.toLineCol(lexer.previousPosition);
-        throw new ParseException("%s(%s:%s): %s".format(lexer.filename, pos[0], pos[1], message));
+        throw new ParseException(lexer.front.position, message);
     }
 }
 
@@ -486,9 +522,10 @@ struct Expander
 
     Node expand()
     {
-        Node root = new Cmd(c.text, c.start);
+        Node root = new Cmd(c.text, c.position);
         root.parent = c.parent;
         root.kids = m.kids;
+        foreach (kid; root.kids) kid.parent = root;
         _expand(root);
         return root;
     }
@@ -501,13 +538,13 @@ struct Expander
             {
                 node = kids;
             }
-            else if (kc.index >= args.length)
+            else if (kc.index > args.length)
             {
-                node.error("expected at least %s arguments, got %s", kc.index + 1, args.length);
+                node.error("expected at least %s arguments, got %s", kc.index, args.length);
             }
             else
             {
-                node = args[kc.index];
+                node = args[kc.index - 1];
             }
         }
         foreach (ref k; node.kids) _expand(k);
@@ -521,11 +558,11 @@ void setParents(Node node)
     foreach (kid; node.kids) setParents(kid);
 }
 
-Book parseFile(string filename, FileReader reader)
+Book parseFile(string filename)
 {
     import std.path : absolutePath;
     filename = absolutePath(filename);
-    auto lexer = Lexer(filename, reader(filename));
+    auto lexer = Lexer(filename);
     auto parser = new Parser(lexer);
     return parser.parseBook;
 }

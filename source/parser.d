@@ -8,6 +8,7 @@ import std.array;
 import std.string;
 import std.stdio;
 import std.path : absolutePath, dirName;
+import std.experimental.logger;
 
 enum Kind
 {
@@ -89,6 +90,7 @@ struct Lexer
 
     void _popFront()
     {
+        enum cdata = "<![CDATA[";
 front:
         if (data.length == 0)
         {
@@ -177,6 +179,22 @@ front:
             data = data[2..$];
             return;
         }
+        enum cdataEnd = "]]>";
+        if (data.startsWith(cdata))
+        {
+            auto rest = data[cdata.length .. $];
+            auto end = rest.indexOf(cdataEnd);
+            if (end < 0)
+            {
+                throw new ParseException(
+                        position, "expected: `<![CDATA[ your data here ]]>` (missing `]]>`)");
+            }
+            front = Token(Kind.text, rest[0..end], position);
+            data = rest[end + cdataEnd.length .. $];
+            infof("cdata length: %s position: %s position after: %s", front.content.length,
+                    front.position, position);
+            return;
+        }
 
 readTextToken:
         auto start = position;
@@ -192,6 +210,7 @@ readTextToken:
                     break;
                 case '<':
                     if (data[i..$].startsWith("<%")) goto foundEnd;
+                    if (data[i..$].startsWith(cdata)) goto foundEnd;
                     break;
                 case '%':
                 case '\\':

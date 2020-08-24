@@ -25,14 +25,26 @@ void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets
             <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
             <link rel="stylesheet" href="subtex.css" type="text/css"/>
             `);
-    if (includeStylesheets && "stylesheet" in book.info)
+    if (includeStylesheets)
     {
-        foreach (stylesheet; book.info["stylesheet"])
+        if ("stylesheet" in book.info)
         {
-            sink.put(`<link rel="stylesheet" href="`);
-            sink.put(stylesheet);
-            sink.put(`" type="text/css"/>
-                    `);
+            foreach (stylesheet; book.info["stylesheet"])
+            {
+                sink.put(`<link rel="stylesheet" href="`);
+                sink.put(stylesheet);
+                sink.put(`" type="text/css"/>
+                        `);
+            }
+        }
+        if ("css" in book.info)
+        {
+            foreach (css; book.info["css"])
+            {
+                sink.put(`<style type="text/css">`);
+                sink.put(css);
+                sink.put("</style>");
+            }
         }
     }
     sink.put(`

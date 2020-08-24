@@ -10,6 +10,7 @@ import core.memory;
 
 import std.algorithm;
 import std.array;
+import std.experimental.logger;
 import std.file;
 import std.format;
 import std.path;
@@ -36,6 +37,7 @@ int main(string[] args)
 
     string[] formats = ["epub", "html"];
     string userOutPath;
+    bool verbose = false;
     bool quiet = false;
     bool count = false;
     bool chapterCount = false;
@@ -48,6 +50,7 @@ int main(string[] args)
             "chaptercount|d", "Count words in input documents", &chapterCount,
             "quiet|q", "Write minimal output", &quiet,
             "lex-only", "Debug: only lex the file, don't parse", &lexOnly,
+            "verbose|v", "Include verbose debugging output", &verbose,
             "watch", "Watch for changes and rerun (linux only)", &watch);
     if (info.helpWanted)
     {
@@ -62,6 +65,14 @@ int main(string[] args)
             stderr.writeln("--watch only supported on linux");
             return 1;
         }
+    }
+    if (verbose)
+    {
+        globalLogLevel = LogLevel.trace;
+    }
+    else
+    {
+        globalLogLevel = LogLevel.warning;
     }
     if (formats.canFind("list"))
     {

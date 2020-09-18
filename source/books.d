@@ -150,6 +150,17 @@ class Cmd : Node
     mixin(Dup);
 }
 
+class Footnote : Node
+{
+    this(size_t index, Position position)
+    {
+        super((index + 1).to!string, position);
+        this.index = index;
+    }
+
+    size_t index;
+}
+
 class Chapter : Node
 {
     this(bool silent, Position position)
@@ -173,6 +184,7 @@ class Chapter : Node
     int index;
     // For chapter numbering
     int chapterNum;
+    Node[] footnotes;
 
     string fileid()
     {

@@ -235,6 +235,7 @@ class Parser
     Lexer lexer;
     string baseDir;
     Book book;
+    Chapter current;
 
     public this(Lexer lexer)
     {
@@ -246,7 +247,6 @@ class Parser
     {
         lexer.skipWhitespace = false;
         Chapter[] chapters;
-        Chapter current;
         while (!lexer.empty)
         {
             auto n = parseOne;
@@ -292,6 +292,7 @@ class Parser
     {
         book = new Book;
         book.mainFile = lexer.filename.absolutePath;
+        lexer.skipWhitespace = true;
         if (lexer.front.kind == Kind.text && lexer.front.content.strip == "") lexer.popFront;
         while (!lexer.empty)
         {
@@ -300,6 +301,7 @@ class Parser
                 break;
             }
         }
+        lexer.skipWhitespace = false;
         book.chapters = parseChapters;
         int chapterNum = 1;
         foreach (c; book.chapters)
@@ -354,6 +356,11 @@ class Parser
             kid.parent = parent;
             parent.kids ~= kid;
         }
+        if (lexer.empty || lexer.front.kind != Kind.end)
+        {
+            error("expected '}'");
+        }
+        lexer.popFront;
     }
 
     Node parseOne()
@@ -449,6 +456,8 @@ class Parser
             case "macro":
             case "macrohtml":
             case "macrobb":
+                auto wasSkippingWhitespace = lexer.skipWhitespace;
+                scope (exit) lexer.skipWhitespace = wasSkippingWhitespace;
                 lexer.skipWhitespace = false;
                 // parsed *almost* as a normal node
                 if (lexer.empty || lexer.front.kind != Kind.start)
@@ -484,33 +493,26 @@ class Parser
                 lexer.popFront;
                 auto m = new Macro(name, tok.position);
                 parseBody(m);
-                if (lexer.empty || lexer.front.kind != Kind.end)
-                {
-                    error("expected '}'");
-                }
-                lexer.skipWhitespace = true;
-                lexer.popFront;
                 m.kids = rest ~ m.kids;
                 auto ident = DefIdent(m.text, m.kind);
                 book.defs[ident] = m;
                 break;
+            case "footnote":
+                auto footnote = new Footnote(current.footnotes.length, tok.position);
+                current.footnotes ~= footnote;
+                if (lexer.front.kind == Kind.start)
+                    lexer.popFront;
+                else
+                    error("expected '{'");
+                parseBody(footnote);
+                return footnote;
             default:
-
         }
         auto curr = new Cmd(tok.content, tok.position);
         if (!lexer.empty && lexer.front.kind == Kind.start)
         {
             lexer.popFront;
             parseBody(curr);
-            if (lexer.empty)
-            {
-                error("expected '}', got end of file");
-            }
-            if (lexer.front.kind != Kind.end)
-            {
-                error("missing '}'");
-            }
-            lexer.popFront;
         }
         return curr;
     }

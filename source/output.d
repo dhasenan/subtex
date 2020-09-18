@@ -19,7 +19,9 @@ void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets
         void delegate(ref OutRange) bdy)
 {
     sink.put(
-            `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+            `<!DOCTYPE html PUBLIC ` ~
+            `"-//W3C//DTD XHTML 1.0 Strict//EN" ` ~
+            `"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
             <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
             <head>
             <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
@@ -142,6 +144,20 @@ struct NodeHtml(OutRange)
         this.tagStack = [];
 
         asHtml(chapter);
+        foreach (fn; chapter.footnotes)
+        {
+            this.sink.inline(`<p class="footnote">`);
+            this.sink.inline(`<a name="footnote-`);
+            this.sink.inline(fn.text);
+            this.sink.inline(`" href="#footnote-ref-`);
+            this.sink.inline(fn.text);
+            this.sink.inline(`"><sup class="footnote">`);
+            this.sink.inline(fn.text);
+            this.sink.inline(`</sup></a>`);
+            foreach (kid; fn.kids)
+                asHtml(kid);
+            this.sink.inline(`</p>`);
+        }
     }
 
     string startQuote(int i = -1)
@@ -223,6 +239,18 @@ struct NodeHtml(OutRange)
                     break;
             }
         }
+        else if (auto fn = cast(Footnote) node)
+        {
+            //static immutable string[] footnoteSymbols = "* † ‡ § | ¶".split(" ");
+            //fn.text = footnoteSymbols[fn.index % $];
+            sink.inline(`<a name="footnote-ref-`);
+            sink.inline(fn.text);
+            sink.inline(`" href="#footnote-`);
+            sink.inline(fn.text);
+            sink.inline(`"><sup class="footnote">`);
+            sink.inline(fn.text);
+            sink.inline(`</sup></a>`);
+        }
         else
         {
             if (node.text && !cast(Chapter) node && node.text.length)
@@ -237,9 +265,13 @@ struct NodeHtml(OutRange)
                     {
                         sink.inline(startQuote(i));
                     }
-                    sink.inline(part.replace("&", "&amp;").replace(" -- ",
-                                "&#x2014;").replace(" --", "&#x2013;").replace("-- ", "&#x2013;").replace("--",
-                                    "&#x2013;"));
+                    sink.inline(
+                        part
+                            .replace("&", "&amp;")
+                            .replace(" -- ", "&#x2014;")
+                            .replace(" --", "&#x2013;")
+                            .replace("-- ", "&#x2013;")
+                            .replace("--", "&#x2013;"));
                 }
             }
             if (node.kids)
@@ -369,10 +401,19 @@ class ToMarkdown(OutRange)
             }
             else
             {
-                sink.put(node.text.replace(`\`, `\\`).replace(`_`,
-                            `\_`).replace(`*`, `\*`).replace(`+`, `\+`).replace(`-`, `\-`).replace(`.`,
-                                `\.`).replace(`[`, `\[`).replace(`]`, `\]`).replace(`#`, `\#`).replace(`!`,
-                                    `\!`).replace("`", "\\`").replace("\n\n", lineStartQuote));
+                sink.put(node.text
+                    .replace(`\`, `\\`)
+                    .replace(`_`, `\_`)
+                    .replace(`*`, `\*`)
+                    .replace(`+`, `\+`)
+                    .replace(`-`, `\-`)
+                    .replace(`.`, `\.`)
+                    .replace(`[`, `\[`)
+                    .replace(`]`, `\]`)
+                    .replace(`#`, `\#`)
+                    .replace(`!`, `\!`)
+                    .replace("`", "\\`")
+                    .replace("\n\n", lineStartQuote));
             }
         }
         foreach (kid; node.kids)
@@ -505,21 +546,27 @@ filename:
             catch (Exception e)
             {
                 writefln(
-                        "Failed to read a stylesheet. " ~ "You specified its path as [%s], which I inferred to be [%s]. " ~ "Please make sure it exists, you can read it, and it's got valid UTF8 text. " ~ "I'm still making your ebook, but it might not look quite like you expect, " ~ "and some applications might not read it properly.",
+                        "Failed to read a stylesheet. " ~
+                        "You specified its path as [%s], which I inferred to be [%s]. " ~
+                        "Please make sure it exists, you can read it, " ~
+                        "and it's got valid UTF8 text. " ~
+                        "I'm still making your ebook, but it might not look quite " ~
+                        "like you expect, " ~
+                        "and some applications might not read it properly.",
                         stylesheet, fullPath);
                 success = false;
             }
             Attachment css = {
-filename:
-                path.baseName(stylesheet), mimeType : "text/css",
-                content : cast(const(ubyte[])) data};
+                filename: path.baseName(stylesheet),
+                mimeType: "text/css",
+                content: cast(const(ubyte[])) data};
             b.attachments ~= css;
         }
 
         Attachment defaultCss = {
-filename:
-            "subtex.css", mimeType : "text/css",
-            content : cast(const(ubyte[])) subtex_css};
+            filename: "subtex.css",
+            mimeType: "text/css",
+            content: cast(const(ubyte[])) subtex_css};
         b.attachments ~= defaultCss;
 
         epub.toEpub(b, zf);
@@ -549,7 +596,11 @@ filename:
         s.reserve(2000);
         s ~= `<?xml version='1.0' encoding='utf-8'?>
             <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="uuid_id" version="2.0">
-            <metadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:opf="http://www.idpf.org/2007/opf" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <metadata
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                xmlns:opf="http://www.idpf.org/2007/opf"
+                xmlns:dcterms="http://purl.org/dc/terms/"
+                xmlns:dc="http://purl.org/dc/elements/1.1/">
             <dc:language>en</dc:language>
             <dc:creator>Unknown</dc:creator>
             <dc:title>`;
@@ -602,8 +653,8 @@ filename:
                     mimeType = `text/svg+xml`;
                     break;
                 default:
-                    writefln(
-                            "Unrecognized image type %s; skipping. We can handle gif, jpg, png, and svg.",
+                    writefln("Unrecognized image type %s; skipping." ~
+                            " We can handle gif, jpg, png, and svg.",
                             ext);
                     break;
             }
@@ -732,9 +783,11 @@ filename:
         s.reserve(1000);
         s ~= `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
             <svg width="350" height="475">
-            <rect x="10" y="10" width="330" height="455" stroke="black" stroke-width="3" fill="#cceeff" stroke-linecap="round"/>
-            <text text-anchor="middle" x="175" y="75" font-size="30" font-weight="600" font-family="serif"
-            stroke-width="2" stroke-opacity="0.5" stroke="#000000" fill="#000000">`;
+            <rect x="10" y="10" width="330" height="455" stroke="black" stroke-width="3"
+                fill="#cceeff" stroke-linecap="round"/>
+            <text text-anchor="middle" x="175" y="75" font-size="30" font-weight="600"
+                font-family="serif" stroke-width="2" stroke-opacity="0.5"
+                stroke="#000000" fill="#000000">`;
         s ~= book.title;
         s ~= `</text>
             <text text-anchor="middle" x="175" y="135" font-size="15">`;

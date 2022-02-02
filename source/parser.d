@@ -245,11 +245,16 @@ class Parser
 
     public Chapter[] parseChapters()
     {
-        lexer.skipWhitespace = false;
         Chapter[] chapters;
         while (!lexer.empty)
         {
+            lexer.skipWhitespace = true;
             auto n = parseOne;
+            lexer.skipWhitespace = false;
+            if (!n)
+            {
+                continue;
+            }
             if (auto imp = cast(Import)n)
             {
                 static import std.file;
@@ -358,7 +363,7 @@ class Parser
         }
         if (lexer.empty || lexer.front.kind != Kind.end)
         {
-            error("expected '}'");
+            parent.error("unterminated node body");
         }
         lexer.popFront;
     }

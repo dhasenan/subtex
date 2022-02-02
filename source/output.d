@@ -267,11 +267,12 @@ struct NodeHtml(OutRange)
                     }
                     sink.inline(
                         part
+                            .replace("'", "&rsquo;")
                             .replace("&", "&amp;")
-                            .replace(" -- ", "&#x2014;")
-                            .replace(" --", "&#x2013;")
-                            .replace("-- ", "&#x2013;")
-                            .replace("--", "&#x2013;"));
+                            .replace(" -- ", "&#x2015;")
+                            .replace(" --", "&#x2014;")
+                            .replace("-- ", "&#x2014;")
+                            .replace("--", "&#x2014;"));
                 }
             }
             if (node.kids)
@@ -923,7 +924,8 @@ class ToBbcode(OutRange)
             switch (cmd.text)
             {
                 case "e":
-                    auto quote = quoteNest % 2 == 0 ? `"` : `'`;
+                    auto quote = quoteNest % 2 == 0 ? `“` : `‘`;
+                    auto end = quoteNest % 2 == 0 ? `”` : `’`;
                     sink.put(quote);
                     quoteNest++;
                     foreach (kid; node.kids)
@@ -931,7 +933,7 @@ class ToBbcode(OutRange)
                         writeNode(kid);
                     }
                     quoteNest--;
-                    sink.put(quote);
+                    sink.put(end);
                     return;
                 case "spell":
                 case "think":
@@ -960,6 +962,9 @@ class ToBbcode(OutRange)
                     }
                     sink.put(`[/inline]`);
                     return;
+                case "scenebreak":
+                    sink.put("[hr]");
+                    return;
                 default:
                     auto key = DefIdent(cmd.text, "bbcode");
                     foreach (kid; node.kids)
@@ -980,7 +985,14 @@ class ToBbcode(OutRange)
                     "\n\n").replace("☃", " ").replace("--", "—");
             if (quoteNest > 0)
             {
-                sink.put(node.text.replace("\n\n", lineStartQuote));
+                sink.put(node.text
+                        .replace("\n\n", lineStartQuote)
+                        .replace("'", "’")
+                        .replace(" -- ", "―")
+                        .replace(" --", "—")
+                        .replace("-- ", "—")
+                        .replace("--", "—")
+                        );
             }
             else
             {

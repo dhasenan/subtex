@@ -1022,7 +1022,7 @@ unittest
         \chapter{Ending}
     It was raining in the city.
         `;
-    auto book = new Parser(data).parse();
+    auto book = new Parser(Lexer.fromText(data)).parseBook();
     Appender!string sink;
     sink.reserve(1000);
     new ToHtml!(typeof(sink))(book, sink).run();

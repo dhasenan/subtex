@@ -34,6 +34,13 @@ struct Lexer
     private ushort fileId;
     private bool _skipWhitespace = true;
 
+    static Lexer fromText(string text)
+    {
+        Lexer lex;
+        lex.data = lex.originalData = text;
+        return lex;
+    }
+
     this(string filename)
     {
         this.filename = filename.absolutePath;
@@ -614,14 +621,6 @@ Book parseFile(string filename)
     return parser.parseBook;
 }
 
-enum infoStart = "\\info{";
-enum chapterStart = "\\chapter{";
-enum silentChapterStart = "\\chapter*{";
-enum importStatement = "\\import{";
-enum macroStart = "\\macro{";
-enum defbb = "\\defbb{";
-enum defhtml = "\\defhtml{";
-
 alias FileReader = string delegate(string);
 
 unittest
@@ -637,7 +636,7 @@ Can we stop him?
 \chapter{Ending}
 It was raining in the city.
     `;
-    auto book = new Parser(data).parse();
+    auto book = new Parser(Lexer.fromText(data)).parseBook();
     assert(book.info["title"][0] == "Subgenius Meeting Notes");
     assert(book.info["author"][0] == "Bob Dobbs");
     assert(book.chapters.length == 2);
@@ -649,8 +648,9 @@ It was raining in the city.
     assert(e.kids[0].text == "He's at ");
     assert(e.kids[1].text == "emph");
     assert((cast(Cmd) e.kids[1]).kids[0].text == "it");
-    assert(kids[2].text == "\n\nCan we stop him?\n");
-    assert(kids.length == 3);
+    assert(cast(ParagraphSeparator)kids[2]);
+    assert(kids[3].text == "Can we stop him?\n", kids[3].text);
+    assert(kids.length == 4);
 
     assert(book.chapters[1].title == "Ending");
 }
@@ -660,6 +660,5 @@ unittest
     auto text = `\chapter*{Prelude}
 It was raining in the city.
     `;
-    assert(text.startsWith(silentChapterStart));
-    Book book = new Parser(text).parse();
+    Book book = new Parser(Lexer.fromText(text)).parseBook();
 }

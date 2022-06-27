@@ -175,7 +175,6 @@ class Chapter : Node
         super("", position);
         this.title = title;
         this.silent = silent;
-        this.kids ~= new Node(title, position);
     }
 
     string title;

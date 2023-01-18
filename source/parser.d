@@ -18,6 +18,7 @@ enum Kind
     end,
     arg,
     paragraph,
+    newline,
 }
 
 struct Token
@@ -131,10 +132,11 @@ front:
             }
 
             // escape; treat it as the start of text
-            // first, can't escape newline
+            // unless it's an end-of-line, which needs special handling in html-ish outputs
             if (data[0] == '\n')
             {
-                throw new ParseException(position, ": '\\' encountered at end of line");
+                front = Token(Kind.newline, "\n", position);
+                return;
             }
             goto readTextToken;
         }
@@ -383,18 +385,20 @@ class Parser
         lexer.popFront;
         final switch (tok.kind) with (Kind)
         {
-            case Kind.command:
+            case command:
                 return parseCommand(tok);
-            case Kind.arg:
+            case arg:
                 return new ArgSeparator(tok.position);
-            case Kind.end:
+            case end:
                 return error("unexpected '}'");
-            case Kind.start:
+            case start:
                 return error("unexpected '}'");
-            case Kind.text:
+            case text:
                 return new Node(tok.content, tok.position);
-            case Kind.paragraph:
+            case paragraph:
                 return new ParagraphSeparator(tok.position);
+            case newline:
+                return new HardNewline(tok.position);
         }
     }
 

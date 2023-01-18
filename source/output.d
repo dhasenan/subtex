@@ -251,6 +251,10 @@ struct NodeHtml(OutRange)
             sink.inline(fn.text);
             sink.inline(`</sup></a>`);
         }
+        else if (cast(HardNewline) node)
+        {
+            sink.inline("<br />\n");
+        }
         else
         {
             if (node.text && !cast(Chapter) node && node.text.length)
@@ -383,6 +387,10 @@ class ToMarkdown(OutRange)
                     break;
             }
         }
+        else if (cast(HardNewline) node)
+        {
+            sink.put("  \n");
+        }
         else
         {
             // If you have 40+ levels of quote nesting, you have issues.
@@ -475,6 +483,10 @@ class ToText(OutRange)
                 return;
             }
         }
+        if (cast(HardNewline) node)
+        {
+            sink.put("\n");
+        }
         if (node.text.length && !cast(Cmd) node)
         {
             auto lineStartQuote = `
@@ -500,9 +512,7 @@ class ToEpub
         this.basePath = book.mainFile.dirName;
         bool success = true;
         auto b = new epub.Book;
-        epub.Chapter titlepage = {
-title:
-            "titlepage", showInTOC : true, content : titlepageXhtml(book)};
+        epub.Chapter titlepage = {title: "titlepage", showInTOC : true, content : titlepageXhtml(book)};
         b.chapters ~= titlepage;
         foreach (chapter; book.chapters)
         {
@@ -517,9 +527,7 @@ title:
                     h.nodeToHtml(book, chapter, s);
                     s ~= `</p>`;
                     });
-            epub.Chapter ch = {
-title:
-                chapter.title, showInTOC : true, content : sink.data};
+            epub.Chapter ch = {title: chapter.title, showInTOC : true, content : sink.data};
             b.chapters ~= ch;
         }
 
@@ -892,16 +900,16 @@ class ToBbcode(OutRange)
 
     void run()
     {
-        sink.put(`[style size="200%"][b]`);
+        sink.put(`[h1]`);
         sink.put(book.title);
-        sink.put(`[/b][/style]`);
+        sink.put(`[/h1]`);
         sink.put("\n");
         sink.put(book.author);
         sink.put("\n");
         sink.put("\n");
         foreach (chapter; book.chapters)
         {
-            sink.put(`[style size="150%"][b]`);
+            sink.put(`[h3]`);
             if (!chapter.silent)
             {
                 sink.put("Chapter ");
@@ -909,10 +917,8 @@ class ToBbcode(OutRange)
                 sink.put(": ");
             }
             sink.put(chapter.title);
-            sink.put(`[/b][/style]`);
-            sink.put("\n");
+            sink.put(`[/3]`);
             writeNode(chapter);
-            sink.put("\n");
             sink.put("\n");
         }
     }
@@ -973,6 +979,10 @@ class ToBbcode(OutRange)
                     }
                     return;
             }
+        }
+        else if (cast(HardNewline) node)
+        {
+            sink.put('\n');
         }
         else
         {

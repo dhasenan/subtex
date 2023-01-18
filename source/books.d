@@ -333,3 +333,11 @@ class Image : Node
 
     mixin(Dup);
 }
+
+class HardNewline : Node
+{
+    this(Position position)
+    {
+        super("\n", position);
+    }
+}

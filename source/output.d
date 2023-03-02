@@ -51,7 +51,7 @@ void htmlPrelude(OutRange)(Book book, ref OutRange sink, bool includeStylesheets
     }
     sink.put(`
             <title>`);
-    sink.put(book.info["title"][0]);
+    sink.put(book.title);
     sink.put(`</title>
             </head>
             <body>

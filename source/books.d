@@ -49,7 +49,8 @@ class Book
         {
             return (*p)[0];
         }
-        return "Book";
+        import std.path : baseName;
+        return baseName(mainFile, ".sub");
     }
 
     string[] stylesheets()

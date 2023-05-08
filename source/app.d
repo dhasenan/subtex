@@ -35,7 +35,7 @@ int main(string[] args)
     import std.getopt;
     auto allWriters = subtex.formats.writers();
 
-    string[] formats = ["epub", "html"];
+    string[] formats;
     string userOutPath;
     bool verbose = false;
     bool quiet = false;
@@ -80,11 +80,16 @@ int main(string[] args)
         {
             writeln(k);
         }
+        return 0;
     }
     if (args.length < 2)
     {
         stderr.writeln("You must provide an input file");
         return 1;
+    }
+    if (formats.length == 0 && !count && !chapterCount)
+    {
+        formats = ["epub"];
     }
 
     if (lexOnly)
@@ -201,25 +206,32 @@ int main(string[] args)
                 }
             }
         }
-        import core.memory : GC;
-        GC.collect();
-        if (watch)
+        version (linux)
         {
-            int inotifyfd;
-            immutable(char)*[] waitPaths;
+            import core.memory : GC;
+            GC.collect();
             if (watch)
             {
-                inotifyfd = inotify_init;
-                waitPaths = filesToWatch.map!toStringz.array;
+                int inotifyfd;
+                immutable(char)*[] waitPaths;
+                if (watch)
+                {
+                    inotifyfd = inotify_init;
+                    waitPaths = filesToWatch.map!toStringz.array;
+                }
+                void[] inotifybuf = new void[4096];
+                foreach (name; waitPaths)
+                {
+                    inotify_add_watch(inotifyfd, name, 2);
+                }
+                // It would be more efficient to update only the affected items.
+                // However, that would mean more complex code.
+                read(inotifyfd, inotifybuf.ptr, inotifybuf.length);
             }
-            void[] inotifybuf = new void[4096];
-            foreach (name; waitPaths)
-            {
-                inotify_add_watch(inotifyfd, name, 2);
-            }
-            // It would be more efficient to update only the affected items.
-            // However, that would mean more complex code.
-            read(inotifyfd, inotifybuf.ptr, inotifybuf.length);
+        }
+        else
+        {
+            break;
         }
     } while (watch);
     if (success)

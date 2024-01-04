@@ -887,7 +887,6 @@ class ToHtml(OutRange)
 
 class ToBbcode(OutRange)
 {
-    // TODO quotes!
     bool simple = true;
     OutRange sink;
     Book book;
@@ -917,7 +916,7 @@ class ToBbcode(OutRange)
                 sink.put(": ");
             }
             sink.put(chapter.title);
-            sink.put(`[/3]`);
+            sink.put(`[/h3]`);
             writeNode(chapter);
             sink.put("\n");
         }

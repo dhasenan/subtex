@@ -988,7 +988,7 @@ class ToBbcode(OutRange)
             // If you have 40+ levels of quote nesting, you have issues.
             auto lineStartQuote = `
 
-                "'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'`[0
+"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'"'`[0
                 .. quoteNest + 2];
             node.text = node.text.replace("\n", "☃").replace("☃☃",
                     "\n\n").replace("☃", " ").replace("--", "—");
